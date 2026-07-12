@@ -1,18 +1,11 @@
-const ApiError = require('../utils/ApiError');
-
-/**
- * Validates req[source] against a Zod schema, replacing it with the parsed
- * (and type-coerced) result on success.
- */
-function validate(schema, source = 'body') {
-  return (req, res, next) => {
-    const result = schema.safeParse(req[source]);
-    if (!result.success) {
-      return next(ApiError.badRequest('Validation failed', result.error.flatten()));
-    }
-    req[source] = result.data;
+/** Validate req.body / req.query / req.params against zod schemas. */
+export const validate = (schemas) => (req, res, next) => {
+  try {
+    if (schemas.body) req.body = schemas.body.parse(req.body ?? {});
+    if (schemas.query) req.validatedQuery = schemas.query.parse(req.query ?? {});
+    if (schemas.params) req.params = schemas.params.parse(req.params ?? {});
     next();
-  };
-}
-
-module.exports = validate;
+  } catch (err) {
+    next(err);
+  }
+};

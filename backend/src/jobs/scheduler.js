@@ -1,11 +1,12 @@
 /**
- * In-process scheduler (runs every 60s). Three duties:
+ * In-process scheduler (runs every 60s). Four duties:
  *  1. Flag overdue allocations and alert holder + managers (once per allocation).
  *  2. Advance booking statuses UPCOMING → ONGOING → COMPLETED as time passes.
  *  3. Send a reminder ~15 minutes before a booking starts (once per booking).
+ *  4. Remind assigned auditors when an open audit cycle is ending soon (once per cycle).
  */
 import { pool } from '../db/pool.js';
-import { notify, notifyRole, invalidateKpis } from '../utils/notify.js';
+import { notify, notifyMany, notifyRole, invalidateKpis } from '../utils/notify.js';
 import { logActivity } from '../utils/activityLog.js';
 
 async function flagOverdueAllocations() {
@@ -64,11 +65,41 @@ async function sendBookingReminders() {
   return rows.length;
 }
 
+async function sendAuditCycleReminders() {
+  const [rows] = await pool.query(`
+    SELECT id, name, ends_on
+    FROM audit_cycles
+    WHERE status = 'OPEN' AND reminder_sent = 0
+      AND ends_on BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 2 DAY)
+  `);
+  for (const r of rows) {
+    await pool.query('UPDATE audit_cycles SET reminder_sent = 1 WHERE id = ?', [r.id]);
+    const [auditors] = await pool.query(
+      'SELECT auditor_user_id FROM audit_assignments WHERE cycle_id = ?',
+      [r.id]
+    );
+    await notifyMany(auditors.map((a) => a.auditor_user_id), {
+      type: 'AUDIT_REMINDER',
+      title: `Audit cycle ending soon: ${r.name}`,
+      body: `"${r.name}" ends on ${String(r.ends_on).slice(0, 10)}. Please complete your verifications.`,
+      entityType: 'audit_cycle', entityId: r.id,
+    });
+    await logActivity({
+      action: 'AUDIT_REMINDER_SENT', entityType: 'audit_cycle', entityId: r.id,
+      summary: `Reminder sent to auditors for cycle "${r.name}" ending ${String(r.ends_on).slice(0, 10)}`,
+    });
+  }
+  return rows.length;
+}
+
 export function startScheduler() {
   const tick = async () => {
     try {
       const changes =
-        (await flagOverdueAllocations()) + (await advanceBookingStatuses()) + (await sendBookingReminders());
+        (await flagOverdueAllocations()) +
+        (await advanceBookingStatuses()) +
+        (await sendBookingReminders()) +
+        (await sendAuditCycleReminders());
       if (changes > 0) invalidateKpis();
     } catch (err) {
       console.error('[scheduler]', err.message);

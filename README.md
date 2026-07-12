@@ -35,12 +35,14 @@
 - **MySQL Server** running locally on port 3306
 
 ### 2. Configure Environment Variables
-Create a `.env` file in the `/server` directory and configure your MySQL credentials:
+Bring up MySQL via Docker from the repo root (`docker compose up -d mysql`), or point at your own
+server. Either way, create a `.env` file in the `/backend` directory (copy `.env.example`) and
+configure your MySQL credentials:
 ```env
 PORT=4000
 DB_HOST=127.0.0.1
 DB_PORT=3306
-DB_USER=your_mysql_username
+DB_USER=root
 DB_PASS=your_mysql_password
 DB_NAME=assetflow
 JWT_SECRET=your_jwt_secret_key
@@ -48,9 +50,9 @@ CLIENT_ORIGIN=http://localhost:3000
 ```
 
 ### 3. Database Setup (Migrations & Seeding)
-Navigate to the server directory, install dependencies, compile migrations, and seed the demo data:
+Navigate to the backend directory, install dependencies, compile migrations, and seed the demo data:
 ```bash
-cd server
+cd backend
 npm install
 npm run db:migrate
 npm run db:seed
@@ -62,15 +64,15 @@ npm run db:seed
 
 Start both servers in two separate terminal shells:
 
-### Terminal 1: Run Express Server (Port 4000)
+### Terminal 1: Run Express Backend (Port 4000)
 ```bash
-cd server
+cd backend
 npm run dev
 ```
 
-### Terminal 2: Run Next.js Client (Port 3000)
+### Terminal 2: Run Next.js Frontend (Port 3000)
 ```bash
-cd client
+cd frontend
 npm install
 npm run dev
 ```
