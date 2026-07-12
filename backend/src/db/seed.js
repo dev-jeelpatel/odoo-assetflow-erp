@@ -146,6 +146,11 @@ async function main() {
     await addAsset('old1', { name: 'Legacy Tower PC', cat: 'Electronics', serial: 'PC-0091', acqYearsAgo: 7.5, cost: 45000, cond: 'POOR', location: 'Warehouse', status: 'RETIRED' });
     await addAsset('lost1', { name: 'GoPro Hero 9', cat: 'Electronics', serial: 'GP9-3341', acqYearsAgo: 3.4, cost: 32000, location: 'Media Room', status: 'LOST' });
 
+    // Seeded assets were tagged directly (AF-0001..AF-00xx) without going through
+    // the shared tag_counters row, so the real "register asset" endpoint would
+    // immediately collide on AF-0001. Sync the counter to the last tag used here.
+    await conn.query(`UPDATE tag_counters SET next_value = ? WHERE name = 'asset_tag'`, [tagNo + 1]);
+
     // ---------- allocations ----------
     async function allocate({ assetKey, toUser = null, toDept = null, by, daysAgo, dueInDays = null, returned = null }) {
       const [r] = await conn.query(
