@@ -1,9 +1,9 @@
 'use client';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Package, Users, Wrench, CalendarDays, ArrowLeftRight,
   Clock, AlertTriangle, TrendingUp, TrendingDown, Minus, Zap,
-  RefreshCw, ChevronRight, Calendar as CalendarIcon,
+  RefreshCw, ChevronRight, ChevronLeft, Calendar as CalendarIcon,
   UserPlus, Wrench as WrenchIcon, BookOpen, ShieldAlert, LogIn, ClipboardCheck,
 } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -40,6 +40,8 @@ interface ActivityItem {
 }
 
 interface DashboardData {
+  as_of_date: string;
+  is_today: boolean;
   kpis: Kpi;
   trends: Record<string, Trend>;
   overdue: OverdueItem[];
@@ -98,6 +100,117 @@ function TrendBadge({ trend }: { trend?: Trend }) {
   );
 }
 
+const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+function toDateKey(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Compact popover calendar card used to pick which date the dashboard reflects. */
+function DateCalendarPicker({ value, onChange }: { value: string; onChange: (dateKey: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const selected = new Date(value + 'T00:00:00');
+  const [viewMonth, setViewMonth] = useState(() => new Date(selected.getFullYear(), selected.getMonth(), 1));
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const todayKey = toDateKey(new Date());
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [open]);
+
+  const firstOfMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1);
+  const startOffset = firstOfMonth.getDay();
+  const daysInMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 0).getDate();
+  const cells: (Date | null)[] = [
+    ...Array.from({ length: startOffset }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, i) => new Date(viewMonth.getFullYear(), viewMonth.getMonth(), i + 1)),
+  ];
+
+  return (
+    <div ref={wrapperRef} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 8,
+          padding: '8px 14px', borderRadius: 'var(--radius-md)',
+          background: 'var(--color-surface)', border: '1px solid var(--color-border-2)',
+          fontSize: '0.8125rem', fontWeight: 500, color: 'var(--color-text)',
+          cursor: 'pointer',
+        }}
+      >
+        <CalendarIcon size={14} color="var(--color-text-3)" />
+        {selected.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
+      </button>
+
+      {open && (
+        <div
+          className="card"
+          style={{
+            position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 20,
+            width: 260, padding: 14, borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <button type="button" className="btn btn-ghost btn-icon btn-sm" onClick={() => setViewMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))}>
+              <ChevronLeft size={14} />
+            </button>
+            <span style={{ fontSize: '0.8125rem', fontWeight: 600 }}>
+              {viewMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+            </span>
+            <button type="button" className="btn btn-ghost btn-icon btn-sm" onClick={() => setViewMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))}>
+              <ChevronRight size={14} />
+            </button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 4 }}>
+            {WEEKDAY_LABELS.map((w, i) => (
+              <div key={i} style={{ textAlign: 'center', fontSize: '0.6875rem', color: 'var(--color-text-3)', fontWeight: 600, padding: '4px 0' }}>{w}</div>
+            ))}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+            {cells.map((day, i) => {
+              if (!day) return <div key={i} />;
+              const key = toDateKey(day);
+              const isSelected = key === value;
+              const isToday = key === todayKey;
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => { onChange(key); setOpen(false); }}
+                  style={{
+                    aspectRatio: '1', borderRadius: 'var(--radius-sm)', border: 'none', cursor: 'pointer',
+                    fontSize: '0.75rem', fontWeight: isSelected ? 700 : 500,
+                    background: isSelected ? 'var(--color-primary-500)' : 'transparent',
+                    color: isSelected ? '#fff' : isToday ? 'var(--color-primary-600)' : 'var(--color-text)',
+                    outline: isToday && !isSelected ? '1px solid var(--color-primary-300)' : 'none',
+                  }}
+                >
+                  {day.getDate()}
+                </button>
+              );
+            })}
+          </div>
+          {value !== todayKey && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ width: '100%', marginTop: 10 }}
+              onClick={() => { onChange(todayKey); setViewMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1)); setOpen(false); }}
+            >
+              Jump to Today
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const { user } = useAuth();
   const [data, setData] = useState<DashboardData | null>(null);
@@ -105,11 +218,11 @@ export default function DashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [asOfDate, setAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
 
-  const load = useCallback(async (silent = false) => {
+  const load = useCallback(async (dateKey: string, silent = false) => {
     if (!silent) setLoading(true);
     else setRefreshing(true);
     try {
-      const res = await api.get<DashboardData>('/dashboard/kpis');
+      const res = await api.get<DashboardData>('/dashboard/kpis', { date: dateKey });
       if (res.data) setData(res.data);
     } catch { /* handled gracefully */ } finally {
       setLoading(false);
@@ -117,10 +230,11 @@ export default function DashboardPage() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(asOfDate); }, [asOfDate, load]);
 
-  // Live refresh when server sends kpi_invalidate via SSE
-  useSSE('kpi_invalidate', () => load(true), [load]);
+  // Live refresh when server sends kpi_invalidate via SSE — only meaningful
+  // while looking at today; a past date's data doesn't change under you.
+  useSSE('kpi_invalidate', () => { if (data?.is_today !== false) load(asOfDate, true); }, [load, asOfDate, data?.is_today]);
 
   const firstName = user?.name?.split(' ')[0] ?? '';
   const kpis = data?.kpis;
@@ -170,35 +284,27 @@ export default function DashboardPage() {
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <label
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8,
-              padding: '8px 14px', borderRadius: 'var(--radius-md)',
-              background: 'var(--color-surface)', border: '1px solid var(--color-border-2)',
-              fontSize: '0.8125rem', fontWeight: 500, color: 'var(--color-text)',
-              cursor: 'pointer', position: 'relative',
-            }}
-          >
-            <CalendarIcon size={14} color="var(--color-text-3)" />
-            {new Date(asOfDate + 'T00:00:00').toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
-            <input
-              type="date"
-              value={asOfDate}
-              onChange={(e) => setAsOfDate(e.target.value)}
-              style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }}
-            />
-          </label>
+          <DateCalendarPicker value={asOfDate} onChange={setAsOfDate} />
           <Button
             variant="primary"
             size="sm"
             leftIcon={<RefreshCw size={14} className={refreshing ? 'animate-pulse' : ''} />}
-            onClick={() => load(true)}
+            onClick={() => load(asOfDate, true)}
             loading={refreshing}
           >
             Refresh
           </Button>
         </div>
       </div>
+
+      {data && !data.is_today && (
+        <div className="alert alert-info" style={{ marginBottom: 20 }}>
+          <CalendarIcon size={16} style={{ flexShrink: 0 }} />
+          <span>
+            Showing dashboard state as of <strong>{new Date(asOfDate + 'T00:00:00').toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}</strong> — not live data.
+          </span>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 16, marginBottom: 20 }}>
