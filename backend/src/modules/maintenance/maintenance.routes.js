@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import fs from 'node:fs';
+import multer from 'multer';
 import { pool, withTransaction } from '../../db/pool.js';
 import { ApiError, catchAsync } from '../../utils/errors.js';
 import { validate } from '../../middleware/validate.js';
@@ -8,9 +10,28 @@ import { logActivity } from '../../utils/activityLog.js';
 import { notify, notifyRole, invalidateKpis } from '../../utils/notify.js';
 import { assertTransition } from '../../utils/stateMachine.js';
 import { paged, meta } from '../../utils/pagination.js';
+import { config } from '../../config.js';
 
 const router = Router();
 router.use(requireAuth);
+
+// The "attach photo of the issue" upload on raise-request. Mirrors the
+// asset-files upload config in assets.routes.js.
+fs.mkdirSync(config.uploadsDir, { recursive: true });
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: config.uploadsDir,
+    filename: (req, file, cb) => {
+      const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+      cb(null, `${Date.now()}-${Math.round(Math.random() * 1e6)}-${safe}`);
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = ['image/png', 'image/jpeg', 'image/webp'].includes(file.mimetype);
+    cb(ok ? null : new ApiError(400, 'BAD_FILE_TYPE', 'Only PNG, JPG, or WEBP images are allowed.'), ok);
+  },
+});
 
 router.get(
   '/',
@@ -44,6 +65,7 @@ router.get(
 // Raise a request. Crucially: this NEVER touches the asset's status.
 router.post(
   '/',
+  upload.single('photo'),
   validate({
     body: z.object({
       asset_id: z.coerce.number().int().positive('Pick an asset'),
@@ -71,8 +93,8 @@ router.post(
     }
 
     const [result] = await pool.query(
-      `INSERT INTO maintenance_requests (asset_id, raised_by, issue_description, priority) VALUES (?, ?, ?, ?)`,
-      [b.asset_id, req.user.id, b.issue_description, b.priority]
+      `INSERT INTO maintenance_requests (asset_id, raised_by, issue_description, priority, photo_path) VALUES (?, ?, ?, ?, ?)`,
+      [b.asset_id, req.user.id, b.issue_description, b.priority, req.file?.filename ?? null]
     );
     await logActivity({
       actorId: req.user.id, action: 'MAINTENANCE_RAISED', entityType: 'maintenance', entityId: result.insertId,
