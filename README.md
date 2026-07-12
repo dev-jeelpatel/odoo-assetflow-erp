@@ -18,6 +18,25 @@
 
 ---
 
+## 📸 Screenshots
+
+| | |
+|---|---|
+| **Login** | **Dashboard** |
+| ![Login](docs/screenshots/login.png) | ![Dashboard](docs/screenshots/dashboard.png) |
+| **Organization Setup** | **Asset Directory** |
+| ![Organization Setup](docs/screenshots/organization-setup.png) | ![Asset Directory](docs/screenshots/assets.png) |
+| **Allocation & Transfer** | **Resource Booking** |
+| ![Allocation & Transfer](docs/screenshots/allocations.png) | ![Resource Booking](docs/screenshots/bookings.png) |
+| **Maintenance Kanban** | **Audit Cycles** |
+| ![Maintenance](docs/screenshots/maintenance.png) | ![Audit Cycles](docs/screenshots/audits.png) |
+| **Reports & Analytics** | **Activity Log** |
+| ![Reports & Analytics](docs/screenshots/reports.png) | ![Activity Log](docs/screenshots/activity-log.png) |
+| **Notifications** | |
+| ![Notifications](docs/screenshots/notifications.png) | |
+
+---
+
 ## 🛠️ Technology Stack
 
 - **Frontend:** Next.js 16 (App Router / Turbopack), React 19, Vanilla CSS (Design tokens & globals)
@@ -60,6 +79,39 @@ npm run db:seed
 
 ---
 
+## 📁 Project Structure
+
+```
+odoo-assetflow-erp/
+├── backend/
+│   ├── src/
+│   │   ├── modules/         # activity, allocations, assets, audits, auth,
+│   │   │                     # bookings, dashboard, maintenance, notifications,
+│   │   │                     # org, reports, transfers (routes + SQL per domain)
+│   │   ├── db/               # migrate.js, seed.js, migrations, pool config
+│   │   ├── jobs/              # cron-style scheduler (overdue flags, notifications)
+│   │   ├── middleware/       # auth guard, error handler, multer uploads
+│   │   ├── config.js
+│   │   └── index.js
+│   └── package.json
+├── frontend/
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── (auth)/        # login, signup, forgot/reset password
+│   │   │   └── (app)/         # dashboard, assets, allocations, bookings,
+│   │   │                       # maintenance, audits, reports, notifications,
+│   │   │                       # activity, organization, settings
+│   │   └── lib/               # api client, sse.ts, auth helpers
+│   └── package.json
+├── docs/
+│   ├── screenshots/           # README images
+│   └── MANUAL_TEST_DATA.md    # copy-paste test data for every module
+├── docker-compose.yml         # mysql service
+└── README.md
+```
+
+---
+
 ## 🚀 Running the System
 
 Start both servers in two separate terminal shells:
@@ -91,6 +143,21 @@ The demo seed data generates a user directory with the following pre-configured 
 | **Asset Manager** | `rohan@assetflow.local` | `Password@123` |
 | **Department Head** | `aditi@assetflow.local` | `Password@123` |
 | **Employee** | `priya@assetflow.local` | `Password@123` |
+
+---
+
+## 📜 Scripts Reference
+
+| Location | Command | Description |
+|---|---|---|
+| `backend/` | `npm run dev` | Start the Express API with hot-reload (`--watch`), port 4000 |
+| `backend/` | `npm start` | Start the Express API without watch mode |
+| `backend/` | `npm run db:migrate` | Run all pending SQL migrations against MySQL |
+| `backend/` | `npm run db:seed` | Wipe and reseed demo data (IT company: 12 depts, ~77 employees, ~237 assets) |
+| `frontend/` | `npm run dev` | Start the Next.js dev server (Turbopack), port 3000 |
+| `frontend/` | `npm run build` | Production build |
+| `frontend/` | `npm start` | Serve the production build |
+| `frontend/` | `npm run lint` | Run ESLint |
 
 ---
 
