@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool } from '../../db/pool.js';
 import { catchAsync } from '../../utils/errors.js';
 import { requireAuth } from '../../middleware/auth.js';
+import { computeBookValue } from '../../utils/depreciation.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -95,6 +96,16 @@ router.get(
     kpis.maintenance_today = kpis.under_maintenance;
     delete kpis.total_assets;
     delete kpis.terminal_assets;
+
+    // Book value as of the same point-in-time date, computed in JS (not SQL)
+    // to keep the straight-line formula in one place (utils/depreciation.js).
+    const [assetRows] = await pool.query(
+      `SELECT acquisition_cost, acquisition_date, useful_life_years FROM assets
+       WHERE status != 'DISPOSED' AND COALESCE(acquisition_date, DATE(created_at)) <= ?`,
+      [asOf]
+    );
+    kpis.total_acquisition_cost = assetRows.reduce((s, a) => s + Number(a.acquisition_cost ?? 0), 0);
+    kpis.total_book_value = assetRows.reduce((s, a) => s + computeBookValue(a, asOf), 0);
 
     // Overdue detail for the callout, reconstructed as of the same date.
     const [overdue] = await pool.query(

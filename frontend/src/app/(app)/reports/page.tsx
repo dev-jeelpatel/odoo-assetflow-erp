@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect, useCallback } from 'react';
-import { BarChart3, TrendingUp, Clock, Download, Calendar } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Clock, Download, Calendar } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { fmtDate, fmtCurrency } from '@/lib/utils';
@@ -10,6 +10,9 @@ interface UtilRow { department_name: string; total: number; allocated: number; u
 interface MaintRow { month: string; count: number; }
 interface DueSoon { id: number; asset_tag: string; asset_name: string; holder_name: string; expected_return_date: string; }
 interface BookingHeat { day: number; hour: number; count: number; }
+interface CategoryValue { category: string; acquisition_cost: number; book_value: number; asset_count: number; }
+interface ValueProjection { year_offset: number; label: string; book_value: number; }
+interface AssetValueData { total_acquisition_cost: number; total_book_value: number; by_category: CategoryValue[]; projection: ValueProjection[]; }
 
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -108,6 +111,7 @@ const TABS = [
   { id: 'maintenance', label: 'Maintenance Frequency', icon: <TrendingUp size={14} /> },
   { id: 'due-soon', label: 'Due Soon', icon: <Clock size={14} /> },
   { id: 'heatmap', label: 'Booking Heatmap', icon: <Calendar size={14} /> },
+  { id: 'asset-value', label: 'Asset Value', icon: <TrendingDown size={14} /> },
 ];
 
 export default function ReportsPage() {
@@ -117,6 +121,7 @@ export default function ReportsPage() {
   const [maintData, setMaintData] = useState<MaintRow[]>([]);
   const [dueSoon, setDueSoon] = useState<DueSoon[]>([]);
   const [heatmap, setHeatmap] = useState<BookingHeat[]>([]);
+  const [assetValue, setAssetValue] = useState<AssetValueData | null>(null);
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async (t: string) => {
@@ -146,6 +151,10 @@ export default function ReportsPage() {
         const r = await api.get<{ weekday: number; hour: number; count: number }[]>('/reports/booking-heatmap');
         setHeatmap((r.data ?? []).map(h => ({ day: h.weekday, hour: h.hour, count: h.count })));
       }
+      if (t === 'asset-value') {
+        const r = await api.get<AssetValueData>('/reports/asset-value');
+        setAssetValue(r.data ?? null);
+      }
     } finally { setLoading(false); }
   }, []);
 
@@ -159,13 +168,15 @@ export default function ReportsPage() {
     <div>
       <div className="page-header">
         <div><h1 className="page-title">Reports & Analytics</h1><p className="page-subtitle">Asset utilization, maintenance trends, and booking patterns</p></div>
-        <Button
-          variant="secondary"
-          leftIcon={<Download size={14} />}
-          onClick={() => exportCsv({ utilization: 'assets', maintenance: 'maintenance', 'due-soon': 'allocations', heatmap: 'bookings' }[tab] ?? 'assets')}
-        >
-          Export CSV
-        </Button>
+        {tab !== 'asset-value' && (
+          <Button
+            variant="secondary"
+            leftIcon={<Download size={14} />}
+            onClick={() => exportCsv({ utilization: 'assets', maintenance: 'maintenance', 'due-soon': 'allocations', heatmap: 'bookings' }[tab] ?? 'assets')}
+          >
+            Export CSV
+          </Button>
+        )}
       </div>
 
       <div className="tab-bar" style={{ marginBottom: 24 }}>
@@ -247,6 +258,30 @@ export default function ReportsPage() {
           <h3 style={{ marginBottom: 6 }}>Booking Heatmap</h3>
           <p style={{ color: 'var(--color-text-2)', fontSize: '0.8rem', marginBottom: 20 }}>Booking frequency by day of week and hour of day</p>
           {heatmap.length === 0 ? <p style={{ color: 'var(--color-text-3)' }}>No booking data yet.</p> : <BookingHeatmap data={heatmap} />}
+        </div>
+      )}
+
+      {!loading && tab === 'asset-value' && assetValue && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+            <div className="card" style={{ padding: '18px 20px' }}>
+              <p style={{ fontSize: '0.75rem', color: 'var(--color-text-3)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Total Acquisition Cost</p>
+              <p style={{ fontSize: '1.5rem', fontWeight: 700 }}>{fmtCurrency(assetValue.total_acquisition_cost)}</p>
+            </div>
+            <div className="card" style={{ padding: '18px 20px' }}>
+              <p style={{ fontSize: '0.75rem', color: 'var(--color-text-3)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Total Book Value</p>
+              <p style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--color-primary-500)' }}>{fmtCurrency(assetValue.total_book_value)}</p>
+            </div>
+          </div>
+          <div className="card">
+            <h3 style={{ marginBottom: 20 }}>Book Value by Category</h3>
+            {assetValue.by_category.length === 0 ? <p style={{ color: 'var(--color-text-3)' }}>No data available.</p> : <BarChart data={assetValue.by_category} labelKey="category" valueKey="book_value" />}
+          </div>
+          <div className="card">
+            <h3 style={{ marginBottom: 6 }}>Projected Book Value</h3>
+            <p style={{ color: 'var(--color-text-2)', fontSize: '0.8rem', marginBottom: 20 }}>Straight-line depreciation of today's assets, projected forward</p>
+            <LineChart data={assetValue.projection} labelKey="label" valueKey="book_value" color="#0ea5e9" />
+          </div>
         </div>
       )}
     </div>

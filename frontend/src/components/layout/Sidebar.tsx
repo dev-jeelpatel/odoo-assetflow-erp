@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Building2, Package, ArrowLeftRight, CalendarDays,
   Wrench, ClipboardCheck, BarChart3, Bell, ScrollText, ChevronLeft,
-  ChevronRight, Zap, LogOut, Settings, User, Shield
+  ChevronRight, Zap, LogOut, Settings, User, Shield, ScanLine
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { prettyStatus } from '@/lib/utils';
@@ -37,6 +37,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
     section: 'Operations',
     items: [
       { href: '/assets', label: 'Assets', icon: <Package size={18} /> },
+      { href: '/assets/scan', label: 'Scan Asset', icon: <ScanLine size={18} /> },
       { href: '/allocations', label: 'Allocation & Transfer', icon: <ArrowLeftRight size={18} /> },
       { href: '/bookings', label: 'Resource Booking', icon: <CalendarDays size={18} /> },
       { href: '/maintenance', label: 'Maintenance', icon: <Wrench size={18} /> },

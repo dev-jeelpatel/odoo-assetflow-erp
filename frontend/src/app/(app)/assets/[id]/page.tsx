@@ -9,7 +9,7 @@ import { useToast } from '@/components/ui/Toast';
 import { Button } from '@/components/ui/Button';
 import { StatusPill } from '@/components/ui/Badge';
 import { Skeleton } from '@/components/ui/EmptyState';
-import { fmtDate, fmtDateTime, fmtCurrency, prettyStatus, timeAgo } from '@/lib/utils';
+import { fmtDate, fmtDateTime, fmtCurrency, prettyStatus, timeAgo, computeBookValue } from '@/lib/utils';
 import { Modal } from '@/components/ui/Modal';
 import { Select } from '@/components/ui/Select';
 import { Input } from '@/components/ui/Input';
@@ -20,6 +20,7 @@ interface Asset {
   id: number; asset_tag: string; name: string; category_name: string; category_custom_fields: any;
   serial_number: string; status: string; cond: string; location: string; department_name: string;
   acquisition_date: string; acquisition_cost: number; is_bookable: boolean; custom_field_values: any;
+  useful_life_years: number | null;
   allocations: any[]; maintenance: any[]; files: any[]; upcoming_bookings: any[];
 }
 
@@ -137,6 +138,8 @@ export default function AssetDetailPage({ params }: { params: Promise<{ id: stri
                   ['Serial Number', asset.serial_number ?? '—'],
                   ['Acquisition Date', fmtDate(asset.acquisition_date)],
                   ['Acquisition Cost', fmtCurrency(asset.acquisition_cost)],
+                  ['Useful Life', asset.useful_life_years ? `${asset.useful_life_years} yrs` : '—'],
+                  ['Current Book Value', fmtCurrency(computeBookValue(asset))],
                   ['Bookable Resource', asset.is_bookable ? 'Yes' : 'No'],
                 ].map(([label, value]) => (
                   <div key={label}>

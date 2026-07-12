@@ -46,6 +46,7 @@ const assetBody = z.object({
   department_id: z.coerce.number().int().positive().nullable().optional(),
   is_bookable: z.coerce.boolean().default(false),
   custom_field_values: z.record(z.union([z.string(), z.number()])).nullable().optional(),
+  useful_life_years: z.coerce.number().int().min(1).max(50).nullable().optional(),
 });
 
 /** Next sequential AF-#### tag, allocated atomically inside the caller's transaction. */
@@ -56,6 +57,34 @@ async function nextAssetTag(conn) {
   await conn.query(`UPDATE tag_counters SET next_value = next_value + 1 WHERE name = 'asset_tag'`);
   return `AF-${String(counter.next_value).padStart(4, '0')}`;
 }
+
+/** Reserves `count` sequential AF-#### tags in one lock/update round trip
+ * (vs. calling nextAssetTag per row) — returns the first reserved value;
+ * row i gets `AF-${pad(start + i)}`. Must only be called with the count of
+ * rows that have already passed validation, so a failed row never consumes
+ * a tag number and never creates a gap. */
+async function reserveAssetTags(conn, count) {
+  const [[counter]] = await conn.query(
+    `SELECT next_value FROM tag_counters WHERE name = 'asset_tag' FOR UPDATE`
+  );
+  await conn.query(`UPDATE tag_counters SET next_value = next_value + ? WHERE name = 'asset_tag'`, [count]);
+  return counter.next_value;
+}
+
+const bulkRowSchema = z.object({
+  name: z.string().trim().min(2).max(160),
+  category_name: z.string().trim().min(1).max(120),
+  serial_number: z.string().trim().max(120).nullable().optional(),
+  acquisition_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  acquisition_cost: z.coerce.number().min(0).max(999999999).nullable().optional(),
+  cond: z.enum(CONDITIONS).default('GOOD'),
+  location: z.string().trim().max(160).nullable().optional(),
+  department_name: z.string().trim().max(120).nullable().optional(),
+  is_bookable: z.coerce.boolean().default(false),
+});
+const bulkImportBody = z.object({
+  rows: z.array(bulkRowSchema).min(1, 'At least one row required').max(500, 'Maximum 500 rows per import'),
+});
 
 // ---------- list & search ----------
 router.get(
@@ -100,6 +129,30 @@ router.get(
   })
 );
 
+// ---------- lookup by tag (QR scan) ----------
+router.get(
+  '/by-tag/:tag',
+  validate({ params: z.object({ tag: z.string().trim().min(1).max(20) }) }),
+  catchAsync(async (req, res) => {
+    const [rows] = await pool.query(
+      `SELECT a.*, c.name AS category_name, d.name AS department_name
+       FROM assets a
+       JOIN asset_categories c ON c.id = a.category_id
+       LEFT JOIN departments d ON d.id = a.department_id
+       WHERE a.asset_tag = ?`,
+      [req.params.tag]
+    );
+    const asset = rows[0];
+    if (!asset) throw ApiError.notFound('No asset found for this tag.');
+
+    const [allocations] = await pool.query(
+      `SELECT al.* FROM allocations al WHERE al.asset_id = ? AND al.returned_at IS NULL LIMIT 1`,
+      [asset.id]
+    );
+    res.json({ data: { ...asset, active_allocation: allocations[0] ?? null } });
+  })
+);
+
 // ---------- register ----------
 router.post(
   '/',
@@ -121,11 +174,12 @@ router.post(
       const tag = await nextAssetTag(conn);
       const [result] = await conn.query(
         `INSERT INTO assets (asset_tag, name, category_id, serial_number, acquisition_date, acquisition_cost,
-                             cond, location, department_id, is_bookable, custom_field_values)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                             cond, location, department_id, is_bookable, custom_field_values, useful_life_years)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [tag, b.name, b.category_id, b.serial_number ?? null, b.acquisition_date ?? null,
          b.acquisition_cost ?? null, b.cond, b.location ?? null, b.department_id ?? null,
-         b.is_bookable ? 1 : 0, b.custom_field_values ? JSON.stringify(b.custom_field_values) : null]
+         b.is_bookable ? 1 : 0, b.custom_field_values ? JSON.stringify(b.custom_field_values) : null,
+         b.useful_life_years ?? null]
       );
       await logActivity({
         actorId: req.user.id, action: 'ASSET_REGISTERED', entityType: 'asset', entityId: result.insertId,
@@ -136,6 +190,89 @@ router.post(
 
     invalidateKpis();
     res.status(201).json({ data: created });
+  })
+);
+
+// ---------- bulk CSV import ----------
+// Category/department names are resolved server-side (single source of
+// truth); tag numbers are reserved in one block only for rows that already
+// passed validation, so a bad row never consumes a tag or creates a gap.
+router.post(
+  '/bulk-import',
+  requireRole('ADMIN', 'ASSET_MANAGER'),
+  validate({ body: bulkImportBody }),
+  catchAsync(async (req, res) => {
+    const results = await withTransaction(async (conn) => {
+      const [cats] = await conn.query(`SELECT id, name FROM asset_categories WHERE status = 'ACTIVE'`);
+      const [depts] = await conn.query(`SELECT id, name FROM departments WHERE status = 'ACTIVE'`);
+      const catMap = new Map(cats.map((c) => [c.name.toLowerCase(), c.id]));
+      const deptMap = new Map(depts.map((d) => [d.name.toLowerCase(), d.id]));
+
+      const out = new Array(req.body.rows.length).fill(null);
+      const seenSerials = new Set();
+      const validRows = [];
+
+      for (let i = 0; i < req.body.rows.length; i++) {
+        const row = req.body.rows[i];
+        const rowNum = i + 1;
+
+        const category_id = catMap.get(row.category_name.trim().toLowerCase());
+        if (!category_id) { out[i] = { row: rowNum, success: false, error: `Unknown category '${row.category_name}'` }; continue; }
+
+        let department_id = null;
+        if (row.department_name) {
+          department_id = deptMap.get(row.department_name.trim().toLowerCase());
+          if (!department_id) { out[i] = { row: rowNum, success: false, error: `Unknown department '${row.department_name}'` }; continue; }
+        }
+
+        if (row.serial_number) {
+          if (seenSerials.has(row.serial_number)) {
+            out[i] = { row: rowNum, success: false, error: `Duplicate serial '${row.serial_number}' in this file` };
+            continue;
+          }
+          const [dupe] = await conn.query('SELECT asset_tag FROM assets WHERE serial_number = ?', [row.serial_number]);
+          if (dupe.length) {
+            out[i] = { row: rowNum, success: false, error: `Serial already registered on ${dupe[0].asset_tag}` };
+            continue;
+          }
+          seenSerials.add(row.serial_number);
+        }
+
+        validRows.push({ rowIndex: i, rowNum, row, category_id, department_id });
+      }
+
+      if (validRows.length) {
+        const startTag = await reserveAssetTags(conn, validRows.length);
+        for (let j = 0; j < validRows.length; j++) {
+          const { rowIndex, rowNum, row, category_id, department_id } = validRows[j];
+          const tag = `AF-${String(startTag + j).padStart(4, '0')}`;
+          const [result] = await conn.query(
+            `INSERT INTO assets (asset_tag, name, category_id, serial_number, acquisition_date, acquisition_cost,
+                                 cond, location, department_id, is_bookable)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [tag, row.name, category_id, row.serial_number ?? null, row.acquisition_date ?? null,
+             row.acquisition_cost ?? null, row.cond, row.location ?? null, department_id, row.is_bookable ? 1 : 0]
+          );
+          out[rowIndex] = { row: rowNum, success: true, id: result.insertId, asset_tag: tag };
+        }
+        await logActivity({
+          actorId: req.user.id, action: 'ASSET_BULK_IMPORTED', entityType: 'asset', entityId: null,
+          summary: `${validRows.length} asset(s) bulk-imported (${out.length - validRows.length} row error(s))`,
+        }, conn);
+      }
+
+      return out;
+    });
+
+    invalidateKpis();
+    res.json({
+      data: {
+        total: results.length,
+        imported: results.filter((r) => r.success).length,
+        failed: results.filter((r) => !r.success).length,
+        results,
+      },
+    });
   })
 );
 
@@ -192,7 +329,7 @@ router.patch(
 
     const sets = [];
     const vals = [];
-    for (const f of ['name', 'category_id', 'serial_number', 'acquisition_date', 'acquisition_cost', 'cond', 'location', 'department_id']) {
+    for (const f of ['name', 'category_id', 'serial_number', 'acquisition_date', 'acquisition_cost', 'cond', 'location', 'department_id', 'useful_life_years']) {
       if (req.body[f] !== undefined) { sets.push(`${f} = ?`); vals.push(req.body[f]); }
     }
     if (req.body.is_bookable !== undefined) { sets.push('is_bookable = ?'); vals.push(req.body.is_bookable ? 1 : 0); }

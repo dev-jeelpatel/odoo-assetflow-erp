@@ -63,6 +63,22 @@ export function fmtCurrency(n: number | null | undefined): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
 }
 
+const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
+
+/** Straight-line book value — mirrors backend/src/utils/depreciation.js. */
+export function computeBookValue(asset: {
+  acquisition_cost: number | string | null;
+  acquisition_date: string | null;
+  useful_life_years: number | null;
+}): number {
+  if (!asset.acquisition_cost) return 0;
+  const cost = Number(asset.acquisition_cost);
+  if (!asset.acquisition_date || !asset.useful_life_years) return cost;
+  const ageYears = (Date.now() - new Date(asset.acquisition_date).getTime()) / MS_PER_YEAR;
+  const fraction = Math.min(Math.max(ageYears, 0) / asset.useful_life_years, 1);
+  return Math.max(cost * (1 - fraction), 0);
+}
+
 /** Build a query string from an object, omitting undefined/null values */
 export function qs(params: Record<string, string | number | boolean | undefined | null>): string {
   const p = new URLSearchParams();

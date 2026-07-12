@@ -4,11 +4,11 @@ import {
   Package, Users, Wrench, CalendarDays, ArrowLeftRight,
   Clock, AlertTriangle, TrendingUp, TrendingDown, Minus, Zap,
   RefreshCw, ChevronRight, ChevronLeft, Calendar as CalendarIcon,
-  UserPlus, Wrench as WrenchIcon, BookOpen, ShieldAlert, LogIn, ClipboardCheck,
+  UserPlus, Wrench as WrenchIcon, BookOpen, ShieldAlert, LogIn, ClipboardCheck, IndianRupee,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useSSE } from '@/lib/sse';
-import { timeAgo } from '@/lib/utils';
+import { timeAgo, fmtCurrency } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
@@ -23,6 +23,7 @@ interface Kpi {
   upcoming_returns: number;
   overdue_returns: number;
   pending_maintenance: number;
+  total_book_value: number;
 }
 
 interface Trend { direction: 'up' | 'down' | 'flat'; pct: number; }
@@ -57,6 +58,7 @@ const KPI_CARDS = [
   { key: 'active_bookings', label: 'Active Bookings', icon: <CalendarDays size={20} />, color: '#a855f7', bg: 'rgba(168,85,247,0.12)' },
   { key: 'pending_transfers', label: 'Pending Transfers', icon: <ArrowLeftRight size={20} />, color: '#f97316', bg: 'rgba(249,115,22,0.12)' },
   { key: 'upcoming_returns', label: 'Upcoming Returns', icon: <Clock size={20} />, color: '#14b8a6', bg: 'rgba(20,184,166,0.12)' },
+  { key: 'total_book_value', label: 'Total Book Value', icon: <IndianRupee size={20} />, color: '#0ea5e9', bg: 'rgba(14,165,233,0.12)' },
 ] as const;
 
 const QUICK_ACTIONS = [
@@ -324,7 +326,7 @@ export default function DashboardPage() {
               <Skeleton width={60} height={34} />
             ) : (
               <div className="kpi-value" style={{ color: 'var(--color-text)', marginBottom: 8 }}>
-                {kpis[card.key as keyof Kpi] as number}
+                {card.key === 'total_book_value' ? fmtCurrency(kpis[card.key]) : kpis[card.key as keyof Kpi]}
               </div>
             )}
             {!loading && kpis && <TrendBadge trend={trends[card.key]} />}

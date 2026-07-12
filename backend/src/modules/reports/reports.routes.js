@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool } from '../../db/pool.js';
 import { ApiError, catchAsync } from '../../utils/errors.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
+import { computeBookValue } from '../../utils/depreciation.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -115,6 +116,54 @@ router.get(
       GROUP BY weekday, hour
     `);
     res.json({ data: rows });
+  })
+);
+
+// Current portfolio book value: totals, per-category breakdown, and a
+// forward-looking projection (not fabricated history — no historical cost
+// tracking exists, so this recomputes the same straight-line formula at
+// future as-of dates using real current data).
+router.get(
+  '/asset-value',
+  catchAsync(async (req, res) => {
+    const [rows] = await pool.query(`
+      SELECT a.acquisition_cost, a.acquisition_date, a.useful_life_years, c.name AS category
+      FROM assets a JOIN asset_categories c ON c.id = a.category_id
+      WHERE a.status != 'DISPOSED'
+    `);
+
+    const now = new Date();
+    let total_acquisition_cost = 0;
+    let total_book_value = 0;
+    const byCategory = new Map();
+    for (const a of rows) {
+      const cost = Number(a.acquisition_cost ?? 0);
+      const value = computeBookValue(a, now);
+      total_acquisition_cost += cost;
+      total_book_value += value;
+      const entry = byCategory.get(a.category) ?? { category: a.category, acquisition_cost: 0, book_value: 0, asset_count: 0 };
+      entry.acquisition_cost += cost;
+      entry.book_value += value;
+      entry.asset_count += 1;
+      byCategory.set(a.category, entry);
+    }
+
+    const projection = [];
+    for (let yearOffset = 0; yearOffset <= 6; yearOffset++) {
+      const asOf = new Date(now);
+      asOf.setFullYear(asOf.getFullYear() + yearOffset);
+      const value = rows.reduce((s, a) => s + computeBookValue(a, asOf), 0);
+      projection.push({ year_offset: yearOffset, label: yearOffset === 0 ? 'Today' : `+${yearOffset}y`, book_value: value });
+    }
+
+    res.json({
+      data: {
+        total_acquisition_cost,
+        total_book_value,
+        by_category: [...byCategory.values()].sort((a, b) => b.book_value - a.book_value),
+        projection,
+      },
+    });
   })
 );
 
