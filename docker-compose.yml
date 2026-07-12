@@ -1,18 +1,20 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: assetflow-postgres
+  mysql:
+    image: mysql:8.0
+    container_name: assetflow-mysql
     restart: unless-stopped
     environment:
-      POSTGRES_USER: assetflow
-      POSTGRES_PASSWORD: assetflow
-      POSTGRES_DB: assetflow
+      MYSQL_ROOT_PASSWORD: assetflow
+      MYSQL_DATABASE: assetflow
+      MYSQL_USER: assetflow
+      MYSQL_PASSWORD: assetflow
     ports:
-      - "55432:5432"
+      - "33061:3306"
     volumes:
-      - assetflow_postgres_data:/var/lib/postgresql/data
+      - assetflow_mysql_data:/var/lib/mysql
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U assetflow"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uassetflow", "-passetflow"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -30,4 +32,4 @@ services:
       retries: 10
 
 volumes:
-  assetflow_postgres_data:
+  assetflow_mysql_data:

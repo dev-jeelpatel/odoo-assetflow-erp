@@ -49,9 +49,8 @@ const HISTORY_INCLUDE = {
 };
 
 async function nextAssetTag() {
-  const [{ nextval }] = await prisma.$queryRawUnsafe(`SELECT nextval('asset_tag_seq') as nextval`);
-  const sequence = Number(nextval);
-  return `${ASSET_TAG_PREFIX}${String(sequence).padStart(ASSET_TAG_PAD, '0')}`;
+  const row = await prisma.assetTagSequence.create({ data: {} });
+  return `${ASSET_TAG_PREFIX}${String(row.id).padStart(ASSET_TAG_PAD, '0')}`;
 }
 
 async function generateQrCode(assetTag) {
@@ -89,19 +88,19 @@ async function listAssets(query) {
     query;
 
   const where = {
-    ...(assetTag && { assetTag: { contains: assetTag, mode: 'insensitive' } }),
-    ...(serialNumber && { serialNumber: { contains: serialNumber, mode: 'insensitive' } }),
+    ...(assetTag && { assetTag: { contains: assetTag } }),
+    ...(serialNumber && { serialNumber: { contains: serialNumber } }),
     ...(categoryId && { categoryId }),
     ...(status && { status }),
     ...(departmentId && { departmentId }),
-    ...(location && { location: { contains: location, mode: 'insensitive' } }),
+    ...(location && { location: { contains: location } }),
     ...(isBookable !== undefined && { isBookable }),
     ...(search && {
       OR: [
-        { name: { contains: search, mode: 'insensitive' } },
-        { assetTag: { contains: search, mode: 'insensitive' } },
-        { serialNumber: { contains: search, mode: 'insensitive' } },
-        { location: { contains: search, mode: 'insensitive' } },
+        { name: { contains: search } },
+        { assetTag: { contains: search } },
+        { serialNumber: { contains: search } },
+        { location: { contains: search } },
       ],
     }),
   };

@@ -20,8 +20,8 @@ async function listEmployees({ search, departmentId, role, status, page, pageSiz
     ...(status && { status }),
     ...(search && {
       OR: [
-        { name: { contains: search, mode: 'insensitive' } },
-        { email: { contains: search, mode: 'insensitive' } },
+        { name: { contains: search } },
+        { email: { contains: search } },
       ],
     }),
   };

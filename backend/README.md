@@ -1,6 +1,6 @@
 # AssetFlow API (backend)
 
-Express + Prisma + PostgreSQL implementation of the AssetFlow ERP backend.
+Express + Prisma + MySQL implementation of the AssetFlow ERP backend.
 
 ## Modules
 
@@ -22,7 +22,7 @@ Express + Prisma + PostgreSQL implementation of the AssetFlow ERP backend.
 
 ```bash
 # from the repo root
-docker compose up -d postgres redis
+docker compose up -d mysql redis
 
 cd backend
 cp .env.example .env   # adjust secrets if needed
@@ -32,8 +32,14 @@ npm run prisma:seed      # creates the initial ADMIN account (see .env for crede
 npm run dev               # starts the API on http://localhost:4000
 ```
 
-The Postgres container is mapped to host port `55432` (not `5432`) to avoid clashing with
-any locally installed PostgreSQL service. Adjust `DATABASE_URL` in `.env` if you change this.
+The MySQL container is mapped to host port `33061` (not `3306`) to avoid clashing with
+any locally installed MySQL service. Adjust `DATABASE_URL` in `.env` if you change this.
+
+On first boot, `docker/mysql-init/01-grant.sql` (mounted into the container) grants the
+`assetflow` user broader privileges — Prisma Migrate needs to create/drop a temporary
+shadow database to compute migration diffs, which requires more than single-schema access.
+This only runs once, against an empty data volume; if you've already started the container,
+run `docker compose down -v` first so the init script re-runs on the next `up`.
 
 ## Auth model
 

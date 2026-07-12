@@ -26,7 +26,7 @@ async function createAuditCycle(data, req) {
     where: {
       status: { notIn: ['DISPOSED'] },
       ...(data.departmentId && { departmentId: data.departmentId }),
-      ...(data.location && { location: { contains: data.location, mode: 'insensitive' } }),
+      ...(data.location && { location: { contains: data.location } }),
     },
     select: { id: true, location: true },
   });
