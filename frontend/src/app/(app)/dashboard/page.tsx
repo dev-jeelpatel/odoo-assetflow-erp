@@ -2,11 +2,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Package, Users, Wrench, CalendarDays, ArrowLeftRight,
-  Clock, AlertTriangle, TrendingUp, Activity, RefreshCw
+  Clock, AlertTriangle, TrendingUp, TrendingDown, Minus,
+  RefreshCw, ChevronRight, Calendar as CalendarIcon,
+  UserPlus, Wrench as WrenchIcon, BookOpen, ShieldAlert, LogIn, ClipboardCheck,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useSSE } from '@/lib/sse';
-import { fmtDate, timeAgo, prettyStatus, statusPill } from '@/lib/utils';
+import { timeAgo } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
@@ -19,54 +21,141 @@ interface Kpi {
   active_bookings: number;
   pending_transfers: number;
   upcoming_returns: number;
-  overdue_count: number;
-  overdue_items: { id: number; asset_tag: string; holder_name: string; expected_return_date: string }[];
+  overdue_returns: number;
+  pending_maintenance: number;
 }
+
+interface Trend { direction: 'up' | 'down' | 'flat'; pct: number; }
+
+interface OverdueItem { id: number; asset_tag: string; asset_name: string; holder_name: string | null; days_overdue: number; }
+interface PendingMaintenanceItem { id: number; asset_tag: string; asset_name: string; priority: string; }
+interface BookingSoonItem { id: number; asset_tag: string; asset_name: string; starts_at: string; }
 
 interface ActivityItem {
   id: number;
   action: string;
   summary: string;
   created_at: string;
-  actor_name: string;
+  actor_name: string | null;
+}
+
+interface DashboardData {
+  kpis: Kpi;
+  trends: Record<string, Trend>;
+  overdue: OverdueItem[];
+  pending_maintenance: PendingMaintenanceItem[];
+  bookings_soon: BookingSoonItem[];
+  recent_activity: ActivityItem[];
 }
 
 const KPI_CARDS = [
-  { key: 'available', label: 'Available Assets', icon: <Package size={20} />, color: '#34d399', bg: 'rgba(16,185,129,0.1)' },
-  { key: 'allocated', label: 'Allocated', icon: <Users size={20} />, color: '#60a5fa', bg: 'rgba(59,130,246,0.1)' },
-  { key: 'under_maintenance', label: 'In Maintenance', icon: <Wrench size={20} />, color: '#fbbf24', bg: 'rgba(245,158,11,0.1)' },
-  { key: 'active_bookings', label: 'Active Bookings', icon: <CalendarDays size={20} />, color: '#c084fc', bg: 'rgba(168,85,247,0.1)' },
-  { key: 'pending_transfers', label: 'Pending Transfers', icon: <ArrowLeftRight size={20} />, color: '#f97316', bg: 'rgba(249,115,22,0.1)' },
-  { key: 'upcoming_returns', label: 'Upcoming Returns', icon: <Clock size={20} />, color: '#2dd4bf', bg: 'rgba(45,212,191,0.1)' },
+  { key: 'available', label: 'Available Assets', icon: <Package size={20} />, color: '#10b981', bg: 'rgba(16,185,129,0.12)' },
+  { key: 'allocated', label: 'Allocated', icon: <Users size={20} />, color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
+  { key: 'under_maintenance', label: 'In Maintenance', icon: <Wrench size={20} />, color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
+  { key: 'active_bookings', label: 'Active Bookings', icon: <CalendarDays size={20} />, color: '#a855f7', bg: 'rgba(168,85,247,0.12)' },
+  { key: 'pending_transfers', label: 'Pending Transfers', icon: <ArrowLeftRight size={20} />, color: '#f97316', bg: 'rgba(249,115,22,0.12)' },
+  { key: 'upcoming_returns', label: 'Upcoming Returns', icon: <Clock size={20} />, color: '#14b8a6', bg: 'rgba(20,184,166,0.12)' },
 ] as const;
+
+const QUICK_ACTIONS = [
+  { href: '/assets', label: 'Browse Assets', icon: <Package size={16} />, color: '#14b8a6' },
+  { href: '/allocations', label: 'Manage Allocations', icon: <ArrowLeftRight size={16} />, color: '#3b82f6' },
+  { href: '/bookings', label: 'Book a Resource', icon: <CalendarDays size={16} />, color: '#a855f7' },
+  { href: '/maintenance', label: 'Maintenance Requests', icon: <Wrench size={16} />, color: '#f59e0b' },
+  { href: '/reports', label: 'View Reports', icon: <TrendingUp size={16} />, color: '#10b981' },
+];
+
+const ACTION_ICON: Record<string, { icon: React.ReactNode; color: string }> = {
+  ASSET_ALLOCATED: { icon: <UserPlus size={14} />, color: '#3b82f6' },
+  ASSET_RETURNED: { icon: <ArrowLeftRight size={14} />, color: '#10b981' },
+  MAINTENANCE_APPROVED: { icon: <WrenchIcon size={14} />, color: '#f59e0b' },
+  MAINTENANCE_RAISED: { icon: <WrenchIcon size={14} />, color: '#f59e0b' },
+  MAINTENANCE_RESOLVED: { icon: <WrenchIcon size={14} />, color: '#10b981' },
+  BOOKING_CREATED: { icon: <BookOpen size={14} />, color: '#a855f7' },
+  BOOKING_CANCELLED: { icon: <BookOpen size={14} />, color: '#ef4444' },
+  AUDIT_ITEM_MARKED: { icon: <ShieldAlert size={14} />, color: '#ef4444' },
+  AUDIT_CLOSED: { icon: <ClipboardCheck size={14} />, color: '#10b981' },
+  AUDIT_CREATED: { icon: <ClipboardCheck size={14} />, color: '#a855f7' },
+  USER_LOGIN: { icon: <LogIn size={14} />, color: '#94a3b8' },
+};
+
+function TrendBadge({ trend }: { trend?: Trend }) {
+  if (!trend || trend.direction === 'flat') {
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.75rem', fontWeight: 600, color: 'var(--color-text-3)' }}>
+        <Minus size={12} /> No change
+      </span>
+    );
+  }
+  const up = trend.direction === 'up';
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.75rem', fontWeight: 600, color: up ? 'var(--color-success)' : 'var(--color-danger)' }}>
+      {up ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+      {trend.pct}% from last week
+    </span>
+  );
+}
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const [kpi, setKpi] = useState<Kpi | null>(null);
-  const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [asOfDate, setAsOfDate] = useState(() => new Date().toISOString().slice(0, 10));
 
-  const loadKpi = useCallback(async (silent = false) => {
+  const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     else setRefreshing(true);
     try {
-      const [kpiRes, actRes] = await Promise.all([
-        api.get<Kpi>('/dashboard/kpis'),
-        api.get<ActivityItem[]>('/activity-logs?limit=12'),
-      ]);
-      setKpi(kpiRes.data);
-      setActivity(actRes.data ?? []);
+      const res = await api.get<DashboardData>('/dashboard/kpis');
+      if (res.data) setData(res.data);
     } catch { /* handled gracefully */ } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => { loadKpi(); }, [loadKpi]);
+  useEffect(() => { load(); }, [load]);
 
   // Live refresh when server sends kpi_invalidate via SSE
-  useSSE('kpi_invalidate', () => loadKpi(true), [loadKpi]);
+  useSSE('kpi_invalidate', () => load(true), [load]);
+
+  const firstName = user?.name?.split(' ')[0] ?? '';
+  const kpis = data?.kpis;
+  const trends = data?.trends ?? {};
+
+  const alerts = [
+    data && data.kpis.overdue_returns > 0 && {
+      key: 'overdue',
+      icon: <AlertTriangle size={16} />,
+      iconBg: '#fee2e2', iconColor: '#dc2626',
+      title: `${data.kpis.overdue_returns} asset${data.kpis.overdue_returns !== 1 ? 's' : ''} overdue for return`,
+      subtitle: `Overdue by more than ${Math.max(...data.overdue.map(o => o.days_overdue), 0)} days`,
+      badge: 'High Priority', badgeBg: '#fee2e2', badgeColor: '#b91c1c',
+      href: '/allocations?tab=overdue',
+    },
+    data && data.kpis.pending_maintenance > 0 && {
+      key: 'maintenance',
+      icon: <Wrench size={16} />,
+      iconBg: '#fef3c7', iconColor: '#b45309',
+      title: `${data.kpis.pending_maintenance} maintenance request${data.kpis.pending_maintenance !== 1 ? 's' : ''} pending approval`,
+      subtitle: 'Require your action',
+      badge: 'Action Required', badgeBg: '#fef3c7', badgeColor: '#92400e',
+      href: '/maintenance',
+    },
+    data && data.bookings_soon.length > 0 && {
+      key: 'bookings',
+      icon: <CalendarDays size={16} />,
+      iconBg: '#f3e8ff', iconColor: '#7e22ce',
+      title: `${data.bookings_soon.length} booking${data.bookings_soon.length !== 1 ? 's' : ''} starting in next 30 minutes`,
+      subtitle: data.bookings_soon[0].asset_name,
+      badge: 'Upcoming', badgeBg: '#f3e8ff', badgeColor: '#7e22ce',
+      href: '/bookings',
+    },
+  ].filter(Boolean) as {
+    key: string; icon: React.ReactNode; iconBg: string; iconColor: string;
+    title: string; subtitle: string; badge: string; badgeBg: string; badgeColor: string; href: string;
+  }[];
 
   return (
     <div>
@@ -75,138 +164,184 @@ export default function DashboardPage() {
         <div>
           <h1 className="page-title">Dashboard</h1>
           <p className="page-subtitle">
-            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+            Welcome back, {firstName || 'there'} 👋
           </p>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          leftIcon={<RefreshCw size={14} className={refreshing ? 'animate-pulse' : ''} />}
-          onClick={() => loadKpi(true)}
-          loading={refreshing}
-        >
-          Refresh
-        </Button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <label
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              padding: '8px 14px', borderRadius: 'var(--radius-md)',
+              background: 'var(--color-surface)', border: '1px solid var(--color-border-2)',
+              fontSize: '0.8125rem', fontWeight: 500, color: 'var(--color-text)',
+              cursor: 'pointer', position: 'relative',
+            }}
+          >
+            <CalendarIcon size={14} color="var(--color-text-3)" />
+            {new Date(asOfDate + 'T00:00:00').toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
+            <input
+              type="date"
+              value={asOfDate}
+              onChange={(e) => setAsOfDate(e.target.value)}
+              style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }}
+            />
+          </label>
+          <Button
+            variant="primary"
+            size="sm"
+            leftIcon={<RefreshCw size={14} className={refreshing ? 'animate-pulse' : ''} />}
+            onClick={() => load(true)}
+            loading={refreshing}
+          >
+            Refresh
+          </Button>
+        </div>
       </div>
 
-      {/* Overdue banner */}
-      {!loading && kpi && kpi.overdue_count > 0 && (
-        <div className="alert alert-danger" style={{ marginBottom: 24, alignItems: 'flex-start' }}>
-          <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
-          <div style={{ flex: 1 }}>
-            <strong>{kpi.overdue_count} overdue return{kpi.overdue_count !== 1 ? 's' : ''}</strong>
-            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {kpi.overdue_items.slice(0, 3).map(item => (
-                <div key={item.id} style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="tag-label">{item.asset_tag}</span>
-                  <span>{item.holder_name}</span>
-                  <span style={{ color: 'rgba(252,165,165,0.7)' }}>— due {fmtDate(item.expected_return_date)}</span>
-                </div>
-              ))}
-              {kpi.overdue_count > 3 && (
-                <div style={{ fontSize: '0.8rem', color: 'rgba(252,165,165,0.7)' }}>
-                  +{kpi.overdue_count - 3} more
-                </div>
-              )}
-            </div>
-          </div>
-          <Link href="/allocations?tab=overdue" className="btn btn-sm btn-danger" style={{ flexShrink: 0, marginLeft: 8 }}>
-            View All
-          </Link>
-        </div>
-      )}
-
       {/* KPI Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16, marginBottom: 28 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 16, marginBottom: 20 }}>
         {KPI_CARDS.map(card => (
-          <div key={card.key} className="kpi-card">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div
+            key={card.key}
+            className="card"
+            style={{ padding: '20px 20px 18px', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-sm)' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
               <div className="kpi-icon" style={{ background: card.bg, color: card.color }}>
                 {card.icon}
               </div>
-              {loading && <div className="skeleton" style={{ width: 40, height: 32, borderRadius: 6 }} />}
-              {!loading && kpi && (
-                <span className="kpi-value" style={{ color: card.color }}>
-                  {kpi[card.key as keyof Kpi] as number}
-                </span>
-              )}
+              <p className="kpi-label" style={{ margin: 0 }}>{card.label}</p>
             </div>
-            <p className="kpi-label">{card.label}</p>
+            {loading || !kpis ? (
+              <Skeleton width={60} height={34} />
+            ) : (
+              <div className="kpi-value" style={{ color: 'var(--color-text)', marginBottom: 8 }}>
+                {kpis[card.key as keyof Kpi] as number}
+              </div>
+            )}
+            {!loading && kpis && <TrendBadge trend={trends[card.key]} />}
           </div>
         ))}
       </div>
 
-      {/* Bottom section */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-        {/* Quick actions */}
-        <div className="card" style={{ padding: '20px 22px' }}>
-          <h3 style={{ marginBottom: 16, fontSize: '0.9375rem' }}>Quick Actions</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {[
-              { href: '/assets', label: 'Browse Assets', icon: <Package size={15} />, color: 'var(--color-primary-400)' },
-              { href: '/allocations', label: 'Manage Allocations', icon: <ArrowLeftRight size={15} />, color: '#60a5fa' },
-              { href: '/bookings', label: 'Book a Resource', icon: <CalendarDays size={15} />, color: '#c084fc' },
-              { href: '/maintenance', label: 'Maintenance Requests', icon: <Wrench size={15} />, color: '#fbbf24' },
-              { href: '/reports', label: 'View Reports', icon: <TrendingUp size={15} />, color: '#34d399' },
-            ].map(action => (
-              <Link
-                key={action.href}
-                href={action.href}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '9px 12px', borderRadius: 'var(--radius-md)',
-                  background: 'var(--color-surface-2)',
-                  border: '1px solid var(--color-border)',
-                  textDecoration: 'none', color: 'var(--color-text)',
-                  fontSize: '0.875rem', fontWeight: 500,
-                  transition: 'all var(--transition)',
-                }}
-                className="quick-action-link"
-              >
-                <span style={{ color: action.color }}>{action.icon}</span>
-                {action.label}
-              </Link>
-            ))}
-          </div>
-        </div>
+      {/* Quick actions — horizontal row */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 24 }}>
+        {QUICK_ACTIONS.map(action => (
+          <Link key={action.href} href={action.href} className="quick-action-chip">
+            <span style={{ color: action.color, display: 'flex' }}>{action.icon}</span>
+            {action.label}
+            <ChevronRight size={14} color="var(--color-text-3)" style={{ marginLeft: 2 }} />
+          </Link>
+        ))}
+      </div>
 
-        {/* Activity feed */}
-        <div className="card" style={{ padding: '20px 22px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <h3 style={{ fontSize: '0.9375rem' }}>Recent Activity</h3>
-            <Link href="/activity" style={{ fontSize: '0.8rem', color: 'var(--color-primary-400)', textDecoration: 'none' }}>
-              View all →
+      {/* Bottom section: Alerts (left) + Activity timeline (right) */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+        {/* Overdue & Alerts */}
+        <div className="card" style={{ padding: '20px 22px', borderRadius: 'var(--radius-xl)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <h3 style={{ fontSize: '0.9375rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <AlertTriangle size={16} color="var(--color-danger)" />
+              Overdue &amp; Alerts
+            </h3>
+            <Link href="/notifications" style={{ fontSize: '0.8rem', color: 'var(--color-primary-600)', textDecoration: 'none', fontWeight: 500 }}>
+              View all
             </Link>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {loading ? (
-              Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} style={{ display: 'flex', gap: 10, padding: '9px 0', borderBottom: '1px solid var(--color-border)' }}>
+
+          {loading ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} width="100%" height={52} />)}
+            </div>
+          ) : alerts.length === 0 ? (
+            <p style={{ color: 'var(--color-text-3)', fontSize: '0.875rem', padding: '20px 0', textAlign: 'center' }}>
+              All caught up — no pending alerts.
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {alerts.map(a => (
+                <Link key={a.key} href={a.href} className="alert-item" style={{ textDecoration: 'none', color: 'inherit' }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 'var(--radius-md)', background: a.iconBg, color: a.iconColor, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {a.icon}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: '0.8375rem', fontWeight: 600, margin: 0 }}>{a.title}</p>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--color-text-3)', margin: '2px 0 0' }}>{a.subtitle}</p>
+                  </div>
+                  <span style={{ fontSize: '0.6875rem', fontWeight: 700, padding: '4px 10px', borderRadius: 'var(--radius-full)', background: a.badgeBg, color: a.badgeColor, whiteSpace: 'nowrap' }}>
+                    {a.badge}
+                  </span>
+                  <ChevronRight size={14} color="var(--color-text-3)" style={{ flexShrink: 0 }} />
+                </Link>
+              ))}
+            </div>
+          )}
+
+          {!loading && alerts.length > 0 && (
+            <div style={{ textAlign: 'center', marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--color-border)' }}>
+              <Link href="/notifications" style={{ fontSize: '0.8125rem', color: 'var(--color-primary-600)', textDecoration: 'none', fontWeight: 600 }}>
+                View all alerts
+              </Link>
+            </div>
+          )}
+        </div>
+
+        {/* Recent Activity — timeline */}
+        <div className="card" style={{ padding: '20px 22px', borderRadius: 'var(--radius-xl)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <h3 style={{ fontSize: '0.9375rem' }}>Recent Activity</h3>
+            <Link href="/activity" style={{ fontSize: '0.8rem', color: 'var(--color-primary-600)', textDecoration: 'none', fontWeight: 500 }}>
+              View all
+            </Link>
+          </div>
+
+          {loading ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} style={{ display: 'flex', gap: 12 }}>
                   <Skeleton width={32} height={32} rounded />
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    <Skeleton width="70%" height={12} />
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <Skeleton width="80%" height={12} />
                     <Skeleton width="40%" height={10} />
                   </div>
                 </div>
-              ))
-            ) : activity.length === 0 ? (
-              <p style={{ color: 'var(--color-text-3)', fontSize: '0.875rem' }}>No activity yet.</p>
-            ) : activity.map((item, i) => (
-              <div key={item.id} style={{ display: 'flex', gap: 10, padding: '9px 0', borderBottom: i < activity.length - 1 ? '1px solid var(--color-border)' : undefined }}>
-                <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <Activity size={13} color="var(--color-text-3)" />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: '0.8125rem', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {item.summary}
-                  </p>
-                  <p style={{ fontSize: '0.72rem', color: 'var(--color-text-3)', marginTop: 2 }}>
-                    {item.actor_name} · {timeAgo(item.created_at)}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : !data || data.recent_activity.length === 0 ? (
+            <p style={{ color: 'var(--color-text-3)', fontSize: '0.875rem' }}>No activity yet.</p>
+          ) : (
+            <div>
+              {data.recent_activity.map((item, i) => {
+                const meta = ACTION_ICON[item.action] ?? { icon: <Clock size={14} />, color: 'var(--color-text-3)' };
+                const isLast = i === data.recent_activity.length - 1;
+                return (
+                  <div key={item.id} className="timeline-item">
+                    <div style={{ position: 'relative', zIndex: 1 }}>
+                      <div style={{
+                        width: 30, height: 30, borderRadius: '50%',
+                        background: 'var(--color-surface)', border: `2px solid ${meta.color}`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                        color: meta.color,
+                      }}>
+                        {meta.icon}
+                      </div>
+                      {!isLast && (
+                        <div style={{ position: 'absolute', left: '50%', top: 30, bottom: -20, width: 2, background: 'var(--color-border)', transform: 'translateX(-50%)' }} />
+                      )}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0, paddingTop: 4 }}>
+                      <p style={{ fontSize: '0.8125rem', lineHeight: 1.4, margin: 0 }}>
+                        {item.summary}
+                      </p>
+                      <p style={{ fontSize: '0.72rem', color: 'var(--color-text-3)', margin: '3px 0 0' }}>
+                        {item.actor_name ?? 'System'} · {timeAgo(item.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>

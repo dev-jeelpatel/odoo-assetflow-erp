@@ -11,7 +11,7 @@ let refCount = 0;
 
 function getConnection(): EventSource {
   if (!es || es.readyState === EventSource.CLOSED) {
-    es = new EventSource(`${BASE}/events`, { withCredentials: true });
+    es = new EventSource(`${BASE}/notifications/events`, { withCredentials: true });
     es.onerror = () => {
       // Reconnect handled automatically by browser; log for debugging.
       console.warn('[SSE] connection error — browser will retry');
