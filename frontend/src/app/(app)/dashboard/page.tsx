@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Package, Users, Wrench, CalendarDays, ArrowLeftRight,
-  Clock, AlertTriangle, TrendingUp, TrendingDown, Minus,
+  Clock, AlertTriangle, TrendingUp, TrendingDown, Minus, Zap,
   RefreshCw, ChevronRight, Calendar as CalendarIcon,
   UserPlus, Wrench as WrenchIcon, BookOpen, ShieldAlert, LogIn, ClipboardCheck,
 } from 'lucide-react';
@@ -58,26 +58,28 @@ const KPI_CARDS = [
 ] as const;
 
 const QUICK_ACTIONS = [
-  { href: '/assets', label: 'Browse Assets', icon: <Package size={16} />, color: '#14b8a6' },
-  { href: '/allocations', label: 'Manage Allocations', icon: <ArrowLeftRight size={16} />, color: '#3b82f6' },
-  { href: '/bookings', label: 'Book a Resource', icon: <CalendarDays size={16} />, color: '#a855f7' },
-  { href: '/maintenance', label: 'Maintenance Requests', icon: <Wrench size={16} />, color: '#f59e0b' },
-  { href: '/reports', label: 'View Reports', icon: <TrendingUp size={16} />, color: '#10b981' },
+  { href: '/assets', label: 'Browse Assets', icon: <Package size={16} />, color: '#10b981', bg: 'rgba(16,185,129,0.10)', border: 'rgba(16,185,129,0.30)' },
+  { href: '/allocations', label: 'Manage Allocations', icon: <ArrowLeftRight size={16} />, color: '#3b82f6', bg: 'rgba(59,130,246,0.10)', border: 'rgba(59,130,246,0.30)' },
+  { href: '/bookings', label: 'Book a Resource', icon: <CalendarDays size={16} />, color: '#a855f7', bg: 'rgba(168,85,247,0.10)', border: 'rgba(168,85,247,0.30)' },
+  { href: '/maintenance', label: 'Maintenance Requests', icon: <Wrench size={16} />, color: '#f59e0b', bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.30)' },
+  { href: '/reports', label: 'View Reports', icon: <TrendingUp size={16} />, color: '#14b8a6', bg: 'rgba(20,184,166,0.10)', border: 'rgba(20,184,166,0.30)' },
 ];
 
-const ACTION_ICON: Record<string, { icon: React.ReactNode; color: string }> = {
-  ASSET_ALLOCATED: { icon: <UserPlus size={14} />, color: '#3b82f6' },
-  ASSET_RETURNED: { icon: <ArrowLeftRight size={14} />, color: '#10b981' },
-  MAINTENANCE_APPROVED: { icon: <WrenchIcon size={14} />, color: '#f59e0b' },
-  MAINTENANCE_RAISED: { icon: <WrenchIcon size={14} />, color: '#f59e0b' },
-  MAINTENANCE_RESOLVED: { icon: <WrenchIcon size={14} />, color: '#10b981' },
-  BOOKING_CREATED: { icon: <BookOpen size={14} />, color: '#a855f7' },
-  BOOKING_CANCELLED: { icon: <BookOpen size={14} />, color: '#ef4444' },
-  AUDIT_ITEM_MARKED: { icon: <ShieldAlert size={14} />, color: '#ef4444' },
-  AUDIT_CLOSED: { icon: <ClipboardCheck size={14} />, color: '#10b981' },
-  AUDIT_CREATED: { icon: <ClipboardCheck size={14} />, color: '#a855f7' },
-  USER_LOGIN: { icon: <LogIn size={14} />, color: '#94a3b8' },
+const ACTION_ICON: Record<string, { icon: React.ReactNode; color: string; bg: string }> = {
+  ASSET_ALLOCATED: { icon: <UserPlus size={14} />, color: '#10b981', bg: 'rgba(16,185,129,0.12)' },
+  ASSET_RETURNED: { icon: <ArrowLeftRight size={14} />, color: '#10b981', bg: 'rgba(16,185,129,0.12)' },
+  MAINTENANCE_APPROVED: { icon: <WrenchIcon size={14} />, color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
+  MAINTENANCE_RAISED: { icon: <WrenchIcon size={14} />, color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
+  MAINTENANCE_RESOLVED: { icon: <WrenchIcon size={14} />, color: '#10b981', bg: 'rgba(16,185,129,0.12)' },
+  BOOKING_CREATED: { icon: <BookOpen size={14} />, color: '#a855f7', bg: 'rgba(168,85,247,0.12)' },
+  BOOKING_CANCELLED: { icon: <BookOpen size={14} />, color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
+  AUDIT_ITEM_MARKED: { icon: <ShieldAlert size={14} />, color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
+  AUDIT_CLOSED: { icon: <ClipboardCheck size={14} />, color: '#10b981', bg: 'rgba(16,185,129,0.12)' },
+  AUDIT_CREATED: { icon: <ClipboardCheck size={14} />, color: '#a855f7', bg: 'rgba(168,85,247,0.12)' },
+  USER_LOGIN: { icon: <LogIn size={14} />, color: '#3b82f6', bg: 'rgba(59,130,246,0.12)' },
 };
+
+const TIMELINE_DOT_DEFAULT = '#94a3b8';
 
 function TrendBadge({ trend }: { trend?: Trend }) {
   if (!trend || trend.direction === 'flat') {
@@ -225,14 +227,27 @@ export default function DashboardPage() {
       </div>
 
       {/* Quick actions — horizontal row */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 24 }}>
-        {QUICK_ACTIONS.map(action => (
-          <Link key={action.href} href={action.href} className="quick-action-chip">
-            <span style={{ color: action.color, display: 'flex' }}>{action.icon}</span>
-            {action.label}
-            <ChevronRight size={14} color="var(--color-text-3)" style={{ marginLeft: 2 }} />
-          </Link>
-        ))}
+      <div className="card" style={{ padding: '18px 22px', borderRadius: 'var(--radius-xl)', marginBottom: 20 }}>
+        <h3 style={{ fontSize: '0.9375rem', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+          <Zap size={16} color="var(--color-primary-500)" fill="var(--color-primary-500)" />
+          Quick Actions
+        </h3>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          {QUICK_ACTIONS.map(action => (
+            <Link
+              key={action.href}
+              href={action.href}
+              className="quick-action-chip"
+              style={{ borderColor: action.border }}
+            >
+              <span style={{ color: action.color, background: action.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 'var(--radius-sm)' }}>
+                {action.icon}
+              </span>
+              {action.label}
+              <ChevronRight size={14} color="var(--color-text-3)" style={{ marginLeft: 2 }} />
+            </Link>
+          ))}
+        </div>
       </div>
 
       {/* Bottom section: Alerts (left) + Activity timeline (right) */}
@@ -288,10 +303,13 @@ export default function DashboardPage() {
 
         {/* Recent Activity — timeline */}
         <div className="card" style={{ padding: '20px 22px', borderRadius: 'var(--radius-xl)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <h3 style={{ fontSize: '0.9375rem' }}>Recent Activity</h3>
-            <Link href="/activity" style={{ fontSize: '0.8rem', color: 'var(--color-primary-600)', textDecoration: 'none', fontWeight: 500 }}>
-              View all
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+            <h3 style={{ fontSize: '0.9375rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Zap size={16} color="var(--color-primary-500)" fill="var(--color-primary-500)" />
+              Recent Activity
+            </h3>
+            <Link href="/activity" style={{ fontSize: '0.8rem', color: 'var(--color-primary-600)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+              View all <ChevronRight size={13} />
             </Link>
           </div>
 
@@ -312,25 +330,27 @@ export default function DashboardPage() {
           ) : (
             <div>
               {data.recent_activity.map((item, i) => {
-                const meta = ACTION_ICON[item.action] ?? { icon: <Clock size={14} />, color: 'var(--color-text-3)' };
+                const meta = ACTION_ICON[item.action] ?? { icon: <Clock size={14} />, color: TIMELINE_DOT_DEFAULT, bg: 'rgba(148,163,184,0.12)' };
                 const isLast = i === data.recent_activity.length - 1;
                 return (
                   <div key={item.id} className="timeline-item">
-                    <div style={{ position: 'relative', zIndex: 1 }}>
-                      <div style={{
-                        width: 30, height: 30, borderRadius: '50%',
-                        background: 'var(--color-surface)', border: `2px solid ${meta.color}`,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                        color: meta.color,
-                      }}>
-                        {meta.icon}
-                      </div>
+                    {/* Chronology dot + connector */}
+                    <div style={{ position: 'relative', width: 10, display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: meta.color, marginTop: 9, flexShrink: 0, zIndex: 1 }} />
                       {!isLast && (
-                        <div style={{ position: 'absolute', left: '50%', top: 30, bottom: -20, width: 2, background: 'var(--color-border)', transform: 'translateX(-50%)' }} />
+                        <div style={{ position: 'absolute', top: 21, bottom: -22, width: 2, background: 'var(--color-border)' }} />
                       )}
                     </div>
-                    <div style={{ flex: 1, minWidth: 0, paddingTop: 4 }}>
-                      <p style={{ fontSize: '0.8125rem', lineHeight: 1.4, margin: 0 }}>
+                    {/* Icon badge */}
+                    <div style={{
+                      width: 30, height: 30, borderRadius: 'var(--radius-md)',
+                      background: meta.bg, color: meta.color,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                    }}>
+                      {meta.icon}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0, paddingTop: 3 }}>
+                      <p style={{ fontSize: '0.8125rem', lineHeight: 1.4, margin: 0, fontWeight: 500 }}>
                         {item.summary}
                       </p>
                       <p style={{ fontSize: '0.72rem', color: 'var(--color-text-3)', margin: '3px 0 0' }}>
