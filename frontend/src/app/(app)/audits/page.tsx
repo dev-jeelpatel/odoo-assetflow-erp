@@ -19,7 +19,7 @@ interface AuditCycle {
   id: number; name: string; scope_department_id: number | null; scope_location: string | null;
   starts_on: string; ends_on: string; status: 'OPEN' | 'CLOSED'; created_by_name: string;
   closed_at: string | null; created_at: string;
-  dept_name?: string;
+  scope_department_name?: string;
 }
 
 interface AuditItem {
@@ -28,7 +28,10 @@ interface AuditItem {
   notes: string; verified_by_name: string; verified_at: string;
 }
 
-interface Discrepancy { missing: AuditItem[]; damaged: AuditItem[]; pending: AuditItem[]; }
+interface Discrepancy {
+  summary: { missing: number; damaged: number; unverified: number };
+  discrepancies: AuditItem[];
+}
 
 interface Dept { id: number; name: string; }
 interface User { id: number; name: string; }
@@ -64,27 +67,26 @@ export default function AuditsPage() {
   const openCycle = async (cycle: AuditCycle) => {
     setSelected(cycle); setLoadingItems(true); setDiscrepancy(null);
     try {
-      const [ir, dr] = await Promise.all([
-        api.get<AuditItem[]>(`/audits/${cycle.id}/items`),
+      const [cr, dr] = await Promise.all([
+        api.get<AuditCycle & { items: AuditItem[] }>(`/audits/${cycle.id}`),
         api.get<Discrepancy>(`/audits/${cycle.id}/discrepancy-report`).catch(() => null),
       ]);
-      setItems(ir.data ?? []); setDiscrepancy(dr?.data ?? null);
+      setItems(cr.data?.items ?? []); setDiscrepancy(dr?.data ?? null);
     } finally { setLoadingItems(false); }
   };
 
   const handleCreate = async (e: FormEvent) => {
     e.preventDefault();
     if (!form.name || !form.starts_on || !form.ends_on) { toast('Name and dates are required.', 'warning'); return; }
+    if (!form.auditor_ids.length) { toast('Assign at least one auditor.', 'warning'); return; }
     setSaving(true);
     try {
       const r = await api.post<{ id: number }>('/audits', {
         name: form.name, starts_on: form.starts_on, ends_on: form.ends_on,
         scope_department_id: form.scope_department_id ? Number(form.scope_department_id) : null,
         scope_location: form.scope_location || null,
+        auditor_ids: form.auditor_ids,
       });
-      if (form.auditor_ids.length) {
-        await api.post(`/audits/${r.data.id}/assign-auditors`, { auditor_ids: form.auditor_ids });
-      }
       toast('Audit cycle created.', 'success');
       setCreateModal(false); load();
       const newCycle = await api.get<AuditCycle>(`/audits/${r.data.id}`);
@@ -137,7 +139,7 @@ export default function AuditsPage() {
                   <StatusPill status={cycle.status} />
                 </div>
                 <p style={{ fontSize: '0.75rem', color: 'var(--color-text-3)' }}>{fmtDate(cycle.starts_on)} – {fmtDate(cycle.ends_on)}</p>
-                {cycle.dept_name && <p style={{ fontSize: '0.75rem', color: 'var(--color-text-2)', marginTop: 2 }}>Dept: {cycle.dept_name}</p>}
+                {cycle.scope_department_name && <p style={{ fontSize: '0.75rem', color: 'var(--color-text-2)', marginTop: 2 }}>Dept: {cycle.scope_department_name}</p>}
               </div>
             ))
           }
@@ -161,11 +163,11 @@ export default function AuditsPage() {
             </div>
 
             {/* Discrepancy banner */}
-            {discrepancy && (discrepancy.missing.length > 0 || discrepancy.damaged.length > 0) && (
+            {discrepancy && (discrepancy.summary.missing > 0 || discrepancy.summary.damaged > 0) && (
               <div className="alert alert-warning">
                 <AlertTriangle size={16} style={{ flexShrink: 0 }} />
                 <div>
-                  <strong>{discrepancy.missing.length} missing, {discrepancy.damaged.length} damaged</strong>
+                  <strong>{discrepancy.summary.missing} missing, {discrepancy.summary.damaged} damaged</strong>
                   <p style={{ fontSize: '0.8rem', marginTop: 3 }}>Discrepancy report auto-generated. {selected.status === 'OPEN' ? 'Close the cycle to apply status updates (missing → LOST).' : 'Missing assets have been marked LOST.'}</p>
                 </div>
               </div>
