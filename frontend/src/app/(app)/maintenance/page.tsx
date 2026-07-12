@@ -42,7 +42,7 @@ export default function MaintenancePage() {
   const [saving, setSaving] = useState(false);
 
   const [raiseForm, setRaiseForm] = useState({ asset_id: '', issue_description: '', priority: 'MEDIUM', photo: null as File | null });
-  const [actionForm, setActionForm] = useState({ technician_name: '', resolution_notes: '' });
+  const [actionForm, setActionForm] = useState({ technician_name: '', resolution_notes: '', reject_notes: '' });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -98,7 +98,7 @@ export default function MaintenancePage() {
       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 8 }}>
         {req.status === 'PENDING' && canManage && (<>
           <Button size="sm" variant="primary" leftIcon={<CheckCircle size={12} />} onClick={e => { e.stopPropagation(); handleAction(req, 'approve'); }}>Approve</Button>
-          <Button size="sm" variant="danger" onClick={e => { e.stopPropagation(); handleAction(req, 'reject'); }}>Reject</Button>
+          <Button size="sm" variant="danger" onClick={e => { e.stopPropagation(); setActionForm(f => ({ ...f, reject_notes: '' })); setActionModal({ req, action: 'reject' }); }}>Reject</Button>
         </>)}
         {req.status === 'APPROVED' && canManage && (
           <Button size="sm" variant="secondary" leftIcon={<UserCheck size={12} />} onClick={e => { e.stopPropagation(); setActionForm({ technician_name: '', resolution_notes: '' }); setActionModal({ req, action: 'assign-technician' }); }}>Assign Tech</Button>
@@ -227,12 +227,26 @@ export default function MaintenancePage() {
         </Modal>
       )}
 
-      {/* Action Modal (assign tech / resolve) */}
+      {/* Action Modal (assign tech / resolve / reject) */}
       {actionModal && (
-        <Modal open={true} onClose={() => setActionModal(null)} title={actionModal.action === 'assign-technician' ? 'Assign Technician' : 'Resolve Request'}
-          footer={<><Button variant="ghost" onClick={() => setActionModal(null)}>Cancel</Button><Button loading={saving} onClick={() => handleAction(actionModal.req, actionModal.action, actionModal.action === 'assign-technician' ? { technician_name: actionForm.technician_name } : { resolution_notes: actionForm.resolution_notes })}>Confirm</Button></>}>
+        <Modal open={true} onClose={() => setActionModal(null)}
+          title={actionModal.action === 'assign-technician' ? 'Assign Technician' : actionModal.action === 'reject' ? 'Reject Request' : 'Resolve Request'}
+          footer={<><Button variant="ghost" onClick={() => setActionModal(null)}>Cancel</Button><Button
+            variant={actionModal.action === 'reject' ? 'danger' : 'primary'}
+            loading={saving}
+            disabled={actionModal.action === 'reject' && actionForm.reject_notes.trim().length < 3}
+            onClick={() => handleAction(
+              actionModal.req,
+              actionModal.action,
+              actionModal.action === 'assign-technician' ? { technician_name: actionForm.technician_name }
+                : actionModal.action === 'reject' ? { notes: actionForm.reject_notes }
+                : { resolution_notes: actionForm.resolution_notes }
+            )}
+          >Confirm</Button></>}>
           {actionModal.action === 'assign-technician' ? (
             <Input label="Technician name *" id="tech-name" value={actionForm.technician_name} onChange={e => setActionForm(f => ({ ...f, technician_name: e.target.value }))} placeholder="e.g. Ravi Kumar" required />
+          ) : actionModal.action === 'reject' ? (
+            <Textarea label="Rejection reason *" value={actionForm.reject_notes} onChange={(e: any) => setActionForm(f => ({ ...f, reject_notes: e.target.value }))} placeholder="Explain why this request is being rejected (min 3 characters)…" required />
           ) : (
             <Textarea label="Resolution notes *" value={actionForm.resolution_notes} onChange={(e: any) => setActionForm(f => ({ ...f, resolution_notes: e.target.value }))} placeholder="Describe what was done to fix the issue…" required />
           )}
