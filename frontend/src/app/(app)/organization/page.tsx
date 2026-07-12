@@ -181,18 +181,27 @@ function UsersTab() {
   const { user: currentUser } = useAuth();
   const { toast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
+  const [depts, setDepts] = useState<Dept[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [roleTarget, setRoleTarget] = useState<{ user: User; role: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [createModal, setCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState({ name: '', email: '', password: '', role: 'EMPLOYEE', department_id: '' });
+  const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
+  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.get<User[]>('/users', { page, limit: 20, search: search || undefined });
-      setUsers(r.data ?? []); setTotal(r.meta?.total ?? 0);
+      const [ur, dr] = await Promise.all([
+        api.get<User[]>('/users', { page, limit: 20, search: search || undefined }),
+        api.get<Dept[]>('/departments?limit=100'),
+      ]);
+      setUsers(ur.data ?? []); setTotal(ur.meta?.total ?? 0);
+      setDepts(dr.data ?? []);
     } finally { setLoading(false); }
   }, [page, search]);
   useEffect(() => { load(); }, [load]);
@@ -205,6 +214,30 @@ function UsersTab() {
       toast(`${roleTarget.user.name} is now ${prettyStatus(roleTarget.role)}.`, 'success');
       setRoleTarget(null); load();
     } catch (err) { toast(err instanceof ApiError ? err.message : 'Failed to update role.', 'error'); } finally { setSaving(false); }
+  };
+
+  const openCreate = () => {
+    setCreateForm({ name: '', email: '', password: '', role: 'EMPLOYEE', department_id: '' });
+    setCreateErrors({});
+    setCreateModal(true);
+  };
+
+  const handleCreate = async (e: FormEvent) => {
+    e.preventDefault();
+    const errs: Record<string, string> = {};
+    if (!createForm.name.trim()) errs.name = 'Name is required.';
+    if (!createForm.email.trim()) errs.email = 'Email is required.';
+    if (createForm.password.length < 8) errs.password = 'Password must be at least 8 characters.';
+    if (Object.keys(errs).length) { setCreateErrors(errs); return; }
+    setCreating(true);
+    try {
+      await api.post('/users', {
+        name: createForm.name.trim(), email: createForm.email.trim(), password: createForm.password,
+        role: createForm.role, department_id: createForm.department_id ? Number(createForm.department_id) : null,
+      });
+      toast(`${createForm.name} added as ${prettyStatus(createForm.role)}.`, 'success');
+      setCreateModal(false); load();
+    } catch (err) { toast(err instanceof ApiError ? err.message : 'Failed to add employee.', 'error'); } finally { setCreating(false); }
   };
 
   const cols: Column<User>[] = [
@@ -233,8 +266,9 @@ function UsersTab() {
 
   return (
     <div>
-      <div style={{ marginBottom: 14 }}>
-        <Input placeholder="Search by name or email…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} id="user-search" />
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 14 }}>
+        <Input placeholder="Search by name or email…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} id="user-search" style={{ flex: 1 }} />
+        <Button leftIcon={<Plus size={15} />} onClick={openCreate}>Add Employee</Button>
       </div>
       <Table columns={cols} data={users} loading={loading} rowKey={u => u.id} page={page} total={total} limit={20}
         totalPages={Math.ceil(total / 20)} onPageChange={setPage} emptyMessage="No employees found." />
@@ -247,6 +281,20 @@ function UsersTab() {
         confirmLabel="Change Role"
         loading={saving}
       />
+      <Modal open={createModal} onClose={() => setCreateModal(false)} title="Add Employee"
+        footer={<><Button variant="ghost" onClick={() => setCreateModal(false)}>Cancel</Button><Button loading={creating} onClick={handleCreate as any}>Add Employee</Button></>}>
+        <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <Input label="Full name" id="new-emp-name" value={createForm.name} onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))} error={createErrors.name} required />
+          <Input label="Email address" id="new-emp-email" type="email" value={createForm.email} onChange={e => setCreateForm(f => ({ ...f, email: e.target.value }))} error={createErrors.email} required />
+          <Input label="Initial password" id="new-emp-password" type="password" value={createForm.password} onChange={e => setCreateForm(f => ({ ...f, password: e.target.value }))} error={createErrors.password} helper="At least 8 characters. Share this with the employee directly." required />
+          <Select label="Role" id="new-emp-role" value={createForm.role} onChange={e => setCreateForm(f => ({ ...f, role: e.target.value }))}>
+            {ROLES.map(r => <option key={r} value={r}>{prettyStatus(r)}</option>)}
+          </Select>
+          <Select label="Department (optional)" id="new-emp-dept" value={createForm.department_id} onChange={e => setCreateForm(f => ({ ...f, department_id: e.target.value }))} placeholder="Unassigned">
+            {depts.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </Select>
+        </form>
+      </Modal>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import bcrypt from 'bcryptjs';
 import { pool } from '../../db/pool.js';
 import { ApiError, catchAsync } from '../../utils/errors.js';
 import { validate } from '../../middleware/validate.js';
@@ -44,6 +45,47 @@ router.get(
       [...vals, limit, offset]
     );
     res.json({ data: rows, meta: meta(page, limit, total) });
+  })
+);
+
+// Admin-created accounts (as opposed to self-signup, which always lands as
+// EMPLOYEE) — lets an Admin create an employee directly with a starting role.
+router.post(
+  '/',
+  requireRole('ADMIN'),
+  validate({
+    body: z.object({
+      name: z.string().trim().min(2, 'Name must be at least 2 characters').max(120),
+      email: z.string().trim().toLowerCase().email('Enter a valid email address'),
+      password: z.string().min(8, 'Password must be at least 8 characters').max(72),
+      role: z.enum(ROLES).default('EMPLOYEE'),
+      department_id: z.coerce.number().int().positive().nullable().optional(),
+    }),
+  }),
+  catchAsync(async (req, res) => {
+    const { name, email, password, role, department_id } = req.body;
+
+    const [existing] = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
+    if (existing.length) {
+      throw ApiError.conflict('EMAIL_TAKEN', 'An account with this email already exists.');
+    }
+    if (department_id) {
+      const [dept] = await pool.query(`SELECT id FROM departments WHERE id = ? AND status = 'ACTIVE'`, [department_id]);
+      if (!dept.length) throw ApiError.badRequest('Selected department does not exist or is inactive.');
+    }
+
+    const hash = await bcrypt.hash(password, 10);
+    const [result] = await pool.query(
+      'INSERT INTO users (name, email, password_hash, role, department_id) VALUES (?, ?, ?, ?, ?)',
+      [name, email, hash, role, department_id ?? null]
+    );
+
+    await logActivity({
+      actorId: req.user.id, action: 'USER_CREATED', entityType: 'user', entityId: result.insertId,
+      summary: `${name} added as ${role.replace('_', ' ')} by ${req.user.name}`,
+    });
+
+    res.status(201).json({ data: { id: result.insertId, name, email, role, department_id: department_id ?? null } });
   })
 );
 
