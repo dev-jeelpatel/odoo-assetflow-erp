@@ -14,6 +14,8 @@ import { StatusPill } from '@/components/ui/Badge';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { fmtDate, timeAgo } from '@/lib/utils';
 
+const RETURN_CONDITIONS = ['NEW', 'GOOD', 'FAIR', 'POOR'];
+
 interface Allocation { id: number; asset_tag: string; asset_name: string; holder_name: string; holder_department: string; allocated_by_name: string; allocated_at: string; expected_return_date: string; returned_at: string | null; is_overdue_flagged: boolean; }
 interface Transfer { id: number; asset_tag: string; asset_name: string; from_user_name: string; to_user_name: string; to_dept_name: string; reason: string; status: string; requested_by_name: string; decided_by_name: string; created_at: string; }
 interface Asset { id: number; asset_tag: string; name: string; status: string; }
@@ -46,7 +48,7 @@ function AllocationsContent() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [allocForm, setAllocForm] = useState({ asset_id: '', user_id: '', expected_return_date: '' });
-  const [returnForm, setReturnForm] = useState({ notes: '' });
+  const [returnForm, setReturnForm] = useState({ condition: 'GOOD', notes: '' });
   const [transferForm, setTransferForm] = useState({ asset_id: '', to_user_id: '', reason: '' });
   const [saving, setSaving] = useState(false);
 
@@ -93,7 +95,7 @@ function AllocationsContent() {
     if (!returnModal) return;
     setSaving(true);
     try {
-      await api.post(`/allocations/${returnModal.id}/return`, { return_condition_notes: returnForm.notes || null });
+      await api.post(`/allocations/${returnModal.id}/return`, { return_condition: returnForm.condition, return_condition_notes: returnForm.notes || undefined });
       toast('Asset returned successfully.', 'success');
       setReturnModal(null); loadAllocs();
     } catch (err) { toast(err instanceof ApiError ? err.message : 'Return failed.', 'error'); } finally { setSaving(false); }
@@ -125,7 +127,7 @@ function AllocationsContent() {
     { key: 'expected_return_date', header: 'Due', render: a => a.expected_return_date ? <span style={{ color: a.is_overdue_flagged ? '#f87171' : undefined }}>{fmtDate(a.expected_return_date)}</span> : '—' },
     { key: 'overdue', header: '', render: a => a.is_overdue_flagged ? <span className="pill pill-critical">Overdue</span> : null },
     { key: 'actions', header: '', render: a => !a.returned_at && canManage ? (
-      <Button variant="ghost" size="sm" leftIcon={<RotateCcw size={13} />} onClick={e => { e.stopPropagation(); setReturnForm({ notes: '' }); setReturnModal(a); }}>Return</Button>
+      <Button variant="ghost" size="sm" leftIcon={<RotateCcw size={13} />} onClick={e => { e.stopPropagation(); setReturnForm({ condition: 'GOOD', notes: '' }); setReturnModal(a); }}>Return</Button>
     ) : null },
   ];
 
@@ -208,6 +210,9 @@ function AllocationsContent() {
               <p style={{ fontWeight: 600 }}>{returnModal.asset_tag} — {returnModal.asset_name}</p>
               <p style={{ fontSize: '0.8rem', color: 'var(--color-text-2)', marginTop: 2 }}>Returned by {returnModal.holder_name}</p>
             </div>
+            <Select label="Condition on return *" value={returnForm.condition} onChange={e => setReturnForm(f => ({ ...f, condition: e.target.value }))} required>
+              {RETURN_CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
+            </Select>
             <Textarea label="Return condition notes" value={returnForm.notes} onChange={(e: any) => setReturnForm(f => ({ ...f, notes: e.target.value }))} placeholder="Describe the condition of the asset on return (scratches, missing parts, etc.)" />
           </form>
         )}
