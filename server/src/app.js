@@ -22,7 +22,24 @@ import activityRoutes from './modules/activity/activity.routes.js';
 export function createApp() {
   const app = express();
 
-  app.use(cors({ origin: config.clientOrigin, credentials: true }));
+  const allowedOrigins = [
+    config.clientOrigin,           // from .env → http://localhost:3000
+    'http://localhost:3001',        // Next.js fallback when 3000 is busy
+    'http://localhost:3002',        // extra safety net
+    'http://192.168.29.140:3000',   // LAN access
+    'http://192.168.29.140:3001',
+  ];
+  app.use(cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (curl, Postman) or matched origins
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS: origin ${origin} not allowed`));
+      }
+    },
+    credentials: true,
+  }));
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
 
