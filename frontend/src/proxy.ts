@@ -6,10 +6,12 @@ export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const token = request.cookies.get('af_token')?.value;
 
+  // Presence of the af_token cookie doesn't mean it's still valid — only the
+  // client (via /auth/me) can confirm that. Redirecting away from /login here
+  // based on cookie presence alone caused an infinite loop with the client-side
+  // redirect for stale tokens, so public paths are always allowed through and
+  // the already-authenticated case is handled client-side instead.
   if (PUBLIC_PATHS.some(p => pathname.startsWith(p))) {
-    if (token && (pathname === '/login' || pathname === '/signup')) {
-      return NextResponse.redirect(new URL('/dashboard', request.url));
-    }
     return NextResponse.next();
   }
 

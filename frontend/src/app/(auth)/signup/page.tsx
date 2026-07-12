@@ -13,7 +13,7 @@ import { useEffect } from 'react';
 interface Dept { id: number; name: string; }
 
 export default function SignupPage() {
-  const { refresh } = useAuth();
+  const { refresh, user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -23,6 +23,13 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  // See src/proxy.ts — an already-authenticated visit to /signup is detected
+  // and redirected here instead of in middleware, since a token cookie alone
+  // doesn't confirm the session is still valid.
+  useEffect(() => {
+    if (!authLoading && user) router.replace('/dashboard');
+  }, [authLoading, user, router]);
 
   useEffect(() => {
     api.get<Dept[]>('/departments?limit=100').then(r => setDepts(r.data)).catch(() => {});

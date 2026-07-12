@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, FormEvent } from 'react';
+import React, { useState, useEffect, FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Zap, Eye, EyeOff, ArrowRight } from 'lucide-react';
@@ -9,13 +9,20 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, user, loading: authLoading } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // The af_token cookie only tells the middleware a token exists, not that
+  // it's valid, so an already-authenticated visit to /login is detected and
+  // redirected here instead of in middleware (see src/proxy.ts).
+  useEffect(() => {
+    if (!authLoading && user) router.replace('/dashboard');
+  }, [authLoading, user, router]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
