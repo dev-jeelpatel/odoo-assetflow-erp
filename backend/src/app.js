@@ -62,6 +62,10 @@ export function createApp() {
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
 
+  // Not a real endpoint the client calls — just a sanity check for anyone hitting
+  // the API's bare origin directly in a browser instead of /api/v1/health.
+  app.get('/', (req, res) => res.json({ data: { service: 'assetflow-api', health: '/api/v1/health' } }));
+
   app.get('/api/v1/health', (req, res) => res.json({ data: { status: 'ok', time: new Date().toISOString() } }));
 
   app.use('/api/v1/auth', authRoutes);

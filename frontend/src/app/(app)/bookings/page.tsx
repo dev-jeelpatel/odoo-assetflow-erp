@@ -65,8 +65,8 @@ export default function BookingsPage() {
       const from = weekDays[0].toISOString();
       const to = weekDays[6].toISOString();
       const [calRes, myRes] = await Promise.all([
-        api.get<Booking[]>(`/assets/${selectedResource.id}/bookings`, { from, to }),
-        api.get<Booking[]>('/bookings?my=true&limit=50'),
+        api.get<Booking[]>('/bookings', { asset_id: selectedResource.id, from, to, limit: 100 }),
+        api.get<Booking[]>('/bookings', { mine: true, limit: 50 }),
       ]);
       setBookings(calRes.data ?? []);
       setMyBookings(myRes.data ?? []);

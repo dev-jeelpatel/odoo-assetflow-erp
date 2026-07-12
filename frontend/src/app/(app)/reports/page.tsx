@@ -122,10 +122,30 @@ export default function ReportsPage() {
   const load = useCallback(async (t: string) => {
     setLoading(true);
     try {
-      if (t === 'utilization') { const r = await api.get<UtilRow[]>('/reports/utilization'); setUtilData(r.data ?? []); }
-      if (t === 'maintenance') { const r = await api.get<MaintRow[]>('/reports/maintenance-frequency'); setMaintData(r.data ?? []); }
-      if (t === 'due-soon') { const r = await api.get<DueSoon[]>('/reports/due-soon'); setDueSoon(r.data ?? []); }
-      if (t === 'heatmap') { const r = await api.get<BookingHeat[]>('/reports/booking-heatmap'); setHeatmap(r.data ?? []); }
+      if (t === 'utilization') {
+        const r = await api.get<{ by_department: { department: string; total_assets: number; allocated: number }[] }>('/reports/utilization');
+        const byDept = r.data?.by_department ?? [];
+        setUtilData(byDept.map(d => ({
+          department_name: d.department,
+          total: d.total_assets,
+          allocated: d.allocated,
+          utilization: d.total_assets ? Math.round((d.allocated / d.total_assets) * 100) : 0,
+        })));
+      }
+      if (t === 'maintenance') {
+        const r = await api.get<{ by_month: { month: string; requests: number }[] }>('/reports/maintenance-frequency');
+        const byMonth = r.data?.by_month ?? [];
+        setMaintData(byMonth.map(m => ({ month: m.month, count: m.requests })));
+      }
+      if (t === 'due-soon') {
+        const r = await api.get<{ returns_due: { asset_tag: string; name: string; holder_name: string; expected_return_date: string }[] }>('/reports/due-soon');
+        const returnsDue = r.data?.returns_due ?? [];
+        setDueSoon(returnsDue.map((d, i) => ({ id: i, asset_tag: d.asset_tag, asset_name: d.name, holder_name: d.holder_name, expected_return_date: d.expected_return_date })));
+      }
+      if (t === 'heatmap') {
+        const r = await api.get<{ weekday: number; hour: number; count: number }[]>('/reports/booking-heatmap');
+        setHeatmap((r.data ?? []).map(h => ({ day: h.weekday, hour: h.hour, count: h.count })));
+      }
     } finally { setLoading(false); }
   }, []);
 
@@ -139,7 +159,11 @@ export default function ReportsPage() {
     <div>
       <div className="page-header">
         <div><h1 className="page-title">Reports & Analytics</h1><p className="page-subtitle">Asset utilization, maintenance trends, and booking patterns</p></div>
-        <Button variant="secondary" leftIcon={<Download size={14} />} onClick={() => exportCsv(tab === 'due-soon' ? 'due-soon' : tab === 'heatmap' ? 'booking-heatmap' : tab)}>
+        <Button
+          variant="secondary"
+          leftIcon={<Download size={14} />}
+          onClick={() => exportCsv({ utilization: 'assets', maintenance: 'maintenance', 'due-soon': 'allocations', heatmap: 'bookings' }[tab] ?? 'assets')}
+        >
           Export CSV
         </Button>
       </div>
