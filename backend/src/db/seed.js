@@ -1,5 +1,5 @@
 /**
- * Demo seed for a large-scale IT company (~80 employees, ~200 assets across
+ * Demo seed for a large-scale IT Company (~80 employees, ~200 assets across
  * 12 departments). All dates are computed relative to *now* so the app
  * always shows live overdue returns, an ongoing booking, and upcoming
  * reminders. Wipes existing data first (dev-only tool).
@@ -221,7 +221,7 @@ async function main() {
                              cond, location, department_id, status, is_bookable, custom_field_values, useful_life_years)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [tag, name, cid[cat], serial, dateOnly(at(-Math.round(acqYearsAgo * 365))), cost, cond, location,
-         dept ? deptIds[dept] : null, status, bookable ? 1 : 0, cfv ? JSON.stringify(cfv) : null, lifeYears]
+          dept ? deptIds[dept] : null, status, bookable ? 1 : 0, cfv ? JSON.stringify(cfv) : null, lifeYears]
       );
       const record = { id: r.insertId, tag, name, dept, deptId: dept ? deptIds[dept] : null, status };
       if (key) aid[key] = record;
@@ -439,9 +439,9 @@ async function main() {
                                   allocated_at, expected_return_date, returned_at, return_condition, return_condition_notes)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [aid[assetKey].id, toUser ? uid[toUser] : null, toDept ? deptIds[toDept] : null, uid[by],
-         sql(at(-daysAgo, 10)), dueInDays === null ? null : dateOnly(at(dueInDays)),
-         returned ? sql(at(-returned.daysAgo, 16)) : null,
-         returned?.condition ?? null, returned?.notes ?? null]
+        sql(at(-daysAgo, 10)), dueInDays === null ? null : dateOnly(at(dueInDays)),
+        returned ? sql(at(-returned.daysAgo, 16)) : null,
+        returned?.condition ?? null, returned?.notes ?? null]
       );
       return r.insertId;
     }
@@ -470,7 +470,7 @@ async function main() {
         `INSERT INTO allocations (asset_id, allocated_to_user_id, allocated_by, allocated_at, expected_return_date, returned_at, return_condition, return_condition_notes)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [asset.id, toUser, by, sql(at(-daysAgo, 10)), dueInDays === null ? null : dateOnly(at(dueInDays)),
-         returned ? sql(at(-returned.daysAgo, 16)) : null, returned?.condition ?? null, returned?.notes ?? null]
+        returned ? sql(at(-returned.daysAgo, 16)) : null, returned?.condition ?? null, returned?.notes ?? null]
       );
       if (!returned) await conn.query(`UPDATE assets SET status = 'ALLOCATED' WHERE id = ?`, [asset.id]);
       return r.insertId;
@@ -504,7 +504,7 @@ async function main() {
         `INSERT INTO transfer_requests (asset_id, from_user_id, to_user_id, reason, status, requested_by, decided_by, decided_at, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [aid[assetKey].id, uid[fromUser], uid[toUser], reason, status, uid[toUser],
-         decidedBy ? uid[decidedBy] : null, decidedBy ? sql(at(-daysAgo + 0.5, 15)) : null, sql(at(-daysAgo, 11))]
+        decidedBy ? uid[decidedBy] : null, decidedBy ? sql(at(-daysAgo + 0.5, 15)) : null, sql(at(-daysAgo, 11))]
       );
     }
     await transfer({ assetKey: 'lap2', fromUser: 'Ishaan', toUser: 'Raj', reason: 'Ishaan is moving to the DevOps pod for Q4; Raj takes over this MacBook.', status: 'REQUESTED', daysAgo: 1 });
@@ -560,11 +560,11 @@ async function main() {
                                            decided_by, decided_at, previous_asset_status, resolution_notes, resolved_at, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [aid[assetKey].id, uid[by], issue, priority, status, tech,
-         decidedBy ? uid[decidedBy] : null, decidedBy ? sql(at(-daysAgo + 0.2, 15)) : null,
-         ['APPROVED', 'TECHNICIAN_ASSIGNED', 'IN_PROGRESS', 'RESOLVED'].includes(status) ? prevStatus : null,
-         status === 'RESOLVED' ? 'Replaced faulty part; tested OK.' : null,
-         status === 'RESOLVED' ? sql(at(-daysAgo + 2, 17)) : null,
-         sql(at(-daysAgo, 10))]
+        decidedBy ? uid[decidedBy] : null, decidedBy ? sql(at(-daysAgo + 0.2, 15)) : null,
+        ['APPROVED', 'TECHNICIAN_ASSIGNED', 'IN_PROGRESS', 'RESOLVED'].includes(status) ? prevStatus : null,
+        status === 'RESOLVED' ? 'Replaced faulty part; tested OK.' : null,
+        status === 'RESOLVED' ? sql(at(-daysAgo + 2, 17)) : null,
+        sql(at(-daysAgo, 10))]
       );
       return r.insertId;
     }
@@ -619,8 +619,8 @@ async function main() {
         `INSERT INTO audit_items (cycle_id, asset_id, expected_location, verification, notes, verified_by, verified_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [engCycleId, a.id, a.location, mark,
-         mark === 'MISSING' ? 'Not at expected desk; last seen two weeks ago' : mark === 'DAMAGED' ? 'Screen cracked in corner' : null,
-         mark === 'PENDING' ? null : uid.Aditi, mark === 'PENDING' ? null : sql(at(-1, 14))]
+          mark === 'MISSING' ? 'Not at expected desk; last seen two weeks ago' : mark === 'DAMAGED' ? 'Screen cracked in corner' : null,
+          mark === 'PENDING' ? null : uid.Aditi, mark === 'PENDING' ? null : sql(at(-1, 14))]
       );
     }
 
